@@ -1,0 +1,128 @@
+#1f77b4	Tableau 10	T 10: 1,1	31.119.180	1
+#1f77b4	Tableau 20	T 20: 1,1	31.119.180	1
+#2c69b0	Blue-Red 6	B-R 6: 1,1	44.105.176	1
+#2c69b0	Blue-Red 12	B-R 12: 1,1	44.105.176	1
+#2ca02c	Tableau 10	T 10: 1,3	44.160.44	1
+#2ca02c	Tableau 20	T 20: 1,5	44.160.44	1
+#3cb7cc	Green-Orange 6	G-O 6: 1,3	60.183.204	1
+#3cb7cc	Green-Orange 12	G-O 12: 1,5	60.183.204	1
+#5f5a41	Purple-Gray 12	P-G 12: 1,5	95.90.65	1
+#5f9ed1	Color Blind 10	CB 10: 1,5	95.158.209	1
+#6ba3d6	Blue-Red 6	B-R 6: 1,4	107.163.214	1
+#6ba3d6	Blue-Red 12	B-R 12: 2,2	107.163.214	1
+#6dccda	Tableau 10 Medium	T 10 M: 2,5	109.204.218	1
+#7b66d2	Purple-Gray 6	P-G 6: 1,1	123.102.210	1
+#7b66d2	Purple-Gray 12	P-G 12: 1,1	123.102.210	1
+#7f7f7f	Tableau 10	T 10: 2,3	127.127.127	1
+#7f7f7f	Tableau 20	T 20: 3,5	127.127.127	1
+#8b7c6e	Purple-Gray 12	P-G 12: 3,1	139.124.110	1
+#8c564b	Tableau 10	T 10: 2,1	140.86.75	1
+#8c564b	Tableau 20	T 20: 3,1	140.86.75	1
+#8f8782	Gray 5	Gra 5: 1,4	143.135.130	1
+#9edae5	Tableau 10 Light	T 10 L: 2,5	158.218.229	1
+#9edae5	Tableau 20	T 20: 4,5	158.218.229	1
+#9fcd99	Traffic Light	TL: 2,4	159.205.153	1
+#17becf	Tableau 10	T 10: 2,5	23.190.207	1
+#17becf	Tableau 20	T 20: 4,4	23.190.207	1
+#32a251	Green-Orange 6	G-O 6: 1,1	50.162.81	1
+#32a251	Green-Orange 12	G-O 12: 1,1	50.162.81	1
+#67bf5c	Tableau 10 Medium	T 10 M: 1,3	103.191.92	1
+#69b764	Traffic Light	TL: 2,1	105.183.100	1
+#86b4a9	Green-Orange 12	G-O 12: 2,5	134.180.169	1
+#98d9e4	Green-Orange 12	G-O 12: 2,1	152.217.228	1
+#98df8a	Tableau 10 Light	T 10 L: 1,3	152.223.138	1
+#98df8a	Tableau 20	T 20: 2,1	152.223.138	1
+#006ba4	Color Blind 10	CB 10: 1,1	0.107.164	1
+#729ece	Tableau 10 Medium	T 10 M: 1,1	114.158.206	1
+#9467bd	Tableau 10	T 10: 1,5	148.103.189	1
+#9467bd	Tableau 20	T 20: 2,4	148.103.189	1
+#39737c	Green-Orange 6	G-O 6: 1,5	57.115.124	1
+#39737c	Green-Orange 12	G-O 12: 2,4	57.115.124	1
+#60636a	Gray 5	Gra 5: 1,1	96.99.106	1
+#82853b	Green-Orange 12	G-O 12: 3,1	130.133.59	1
+#94917b	Purple-Gray 6	P-G 6: 1,3	148.145.123	1
+#309343	Traffic Light	TL: 1,3	48.147.67	1
+#414451	Gray 5	Gra 5: 1,3	65.68.81	1
+#595959	Color Blind 10	CB 10: 1,4	89.89.89	1
+#898989	Color Blind 10	CB 10: 2,2	137.137.137	1
+#995688	Purple-Gray 6	P-G 6: 1,4	153.86.136	1
+#995688	Purple-Gray 12	P-G 12: 2,2	153.86.136	1
+#a2a2a2	Tableau 10 Medium	T 10 M: 2,3	162.162.162	1
+#a2c8ec	Color Blind 10	CB 10: 2,3	162.200.236	1
+#a5acaf	Gray 5	Gra 5: 1,2	165.172.175	1
+#a699e8	Purple-Gray 12	P-G 12: 1,2	166.153.232	1
+#a8786e	Tableau 10 Medium	T 10 M: 2,1	168.120.110	1
+#ab6ad5	Purple-Gray 12	P-G 12: 2,4	171.106.213	1
+#ababab	Color Blind 10	CB 10: 1,3	171.171.171	1
+#ac613c	Blue-Red 6	B-R 6: 1,3	172.97.60	1
+#ac613c	Blue-Red 12	B-R 12: 1,5	172.97.60	1
+#ac8763	Blue-Red 12	B-R 12: 2,4	172.135.99	1
+#acd98d	Green-Orange 12	G-O 12: 1,2	172.217.141	1
+#ad8bc9	Tableau 10 Medium	T 10 M: 1,5	173.139.201	1
+#aec7e8	Tableau 10 Light	T 10 L: 1,1	174.199.232	1
+#aec7e8	Tableau 20	T 20: 1,2	174.199.232	1
+#b4b19b	Purple-Gray 12	P-G 12: 2,1	180.177.155	1
+#b5c8e2	Blue-Red 12	B-R 12: 1,2	181.200.226	1
+#b5dffd	Blue-Red 12	B-R 12: 2,3	181.223.253	1
+#b85a0d	Green-Orange 6	G-O 6: 2,1	184.90.13	1
+#b85a0d	Green-Orange 12	G-O 12: 2,2	184.90.13	1
+#b10318	Traffic Light	TL: 1,1	177.3.24	1
+#bcbd22	Tableau 10	T 10: 2,4	188.189.34	1
+#bcbd22	Tableau 20	T 20: 4,2	188.189.34	1
+#bd0a36	Blue-Red 12	B-R 12: 3,1	189.10.54	1
+#c5b0d5	Tableau 10 Light	T 10 L: 1,5	197.176.213	1
+#c5b0d5	Tableau 20	T 20: 2,5	197.176.213	1
+#c7c7c7	Tableau 10 Light	T 10 L: 2,3	199.199.199	1
+#c7c7c7	Tableau 20	T 20: 4,1	199.199.199	1
+#c49c94	Tableau 10 Light	T 10 L: 2,1	196.156.148	1
+#c49c94	Tableau 20	T 20: 3,2	196.156.148	1
+#c85200	Color Blind 10	CB 10: 2,1	200.82.0	1
+#ccc94d	Green-Orange 12	G-O 12: 3,2	204.201.77	1
+#cdcc5d	Tableau 10 Medium	T 10 M: 2,4	205.204.93	1
+#cfcfcf	Gray 5	Gra 5: 1,5	207.207.207	1
+#cfcfcf	Color Blind 10	CB 10: 2,5	207.207.207	1
+#d7d5c5	Purple-Gray 6	P-G 6: 2,1	215.213.197	1
+#d098ee	Purple-Gray 6	P-G 6: 1,5	208.152.238	1
+#d098ee	Purple-Gray 12	P-G 12: 2,5	208.152.238	1
+#d898ba	Purple-Gray 12	P-G 12: 2,3	216.152.186	1
+#d62728	Tableau 10	T 10: 1,4	214.39.40	1
+#d62728	Tableau 20	T 20: 2,2	214.39.40	1
+#d82526	Traffic Light	TL: 1,4	216.37.38	1
+#dba13a	Traffic Light	TL: 1,2	219.161.58	1
+#dbd4c5	Purple-Gray 12	P-G 12: 3,2	219.212.197	1
+#dbdb8d	Tableau 10 Light	T 10 L: 2,4	219.219.141	1
+#dbdb8d	Tableau 20	T 20: 4,3	219.219.141	1
+#dc5fbd	Purple-Gray 6	P-G 6: 1,2	220.95.189	1
+#dc5fbd	Purple-Gray 12	P-G 12: 1,3	220.95.189	1
+#ddc9b4	Blue-Red 12	B-R 12: 2,5	221.201.180	1
+#e9c39b	Blue-Red 6	B-R 6: 2,1	233.195.155	1
+#e9c39b	Blue-Red 12	B-R 12: 2,1	233.195.155	1
+#e377c2	Tableau 10	T 10: 2,2	227.119.194	1
+#e377c2	Tableau 20	T 20: 3,3	227.119.194	1
+#ea6b73	Blue-Red 6	B-R 6: 1,5	234.107.115	1
+#ed97ca	Tableau 10 Medium	T 10 M: 2,2	237.151.202	1
+#ed665d	Tableau 10 Medium	T 10 M: 1,4	237.102.93	1
+#f7b6d2	Tableau 10 Light	T 10 L: 2,2	247.182.210	1
+#f7b6d2	Tableau 20	T 20: 3,4	247.182.210	1
+#f26c64	Traffic Light	TL: 2,2	242.108.100	1
+#f4737a	Blue-Red 12	B-R 12: 3,2	244.115.122	1
+#f02720	Blue-Red 6	B-R 6: 1,2	240.39.32	1
+#f02720	Blue-Red 12	B-R 12: 1,3	240.39.32	1
+#ff7f0e	Tableau 10	T 10: 1,2	255.127.14	1
+#ff7f0e	Tableau 20	T 20: 1,3	255.127.14	1
+#ff7f0f	Green-Orange 6	G-O 6: 1,2	255.127.15	1
+#ff7f0f	Green-Orange 12	G-O 12: 1,3	255.127.15	1
+#ff9e4a	Tableau 10 Medium	T 10 M: 1,2	255.158.74	1
+#ff800e	Color Blind 10	CB 10: 1,2	255.128.14	1
+#ff9896	Tableau 10 Light	T 10 L: 1,4	255.152.150	1
+#ff9896	Tableau 20	T 20: 2,3	255.152.150	1
+#ffb6b0	Blue-Red 12	B-R 12: 1,4	255.182.176	1
+#ffb977	Green-Orange 12	G-O 12: 1,4	255.185.119	1
+#ffbb78	Tableau 10 Light	T 10 L: 1,2	255.187.120	1
+#ffbb78	Tableau 20	T 20: 1,4	255.187.120	1
+#ffbc79	Color Blind 10	CB 10: 2,4	255.188.121	1
+#ffc0da	Purple-Gray 12	P-G 12: 1,4	255.192.218	1
+#ffc156	Traffic Light	TL: 1,5	255.193.86	1
+#ffd94a	Green-Orange 6	G-O 6: 1,4	255.217.74	1
+#ffd94a	Green-Orange 12	G-O 12: 2,3	255.217.74	1
+#ffdd71	Traffic Light	TL: 2,3	255.221.113	1

@@ -1,0 +1,27 @@
+Summary of folder contents:
+
+--------------
+CellRanger.tgz
+--------------
+
+This is an archive containing the CellRanger output files. To extract
+the files, you can double click on the file, or enter the following
+command on the command line:
+
+tar -xvzf CellRanger.tgz
+
+The output files are described on the 10X CellRanger website:
+https://support.10xgenomics.com/single-cell/software/pipelines/latest/output/overview
+
+---
+DGE
+---
+
+This folder contains processed gene expression matrices for each sample
+(*.dge.txt.gz) and for all samples combined (all.dge.txt.gz). These
+expression matrices are generated from the "filtered_gene_bc_matrices"
+folders in the CellRanger output. The matrices are filtered to remove
+cells with fewer than 500 expressed genes. Within these matrices, each
+row is a gene, each column is a cell barcode, and each value is a UMI
+count. For convenience, the sample name is prepended to the cell barcode.
+
