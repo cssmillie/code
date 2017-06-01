@@ -80,7 +80,7 @@ make_seurat = function(name, seur=NULL, dge=NULL, regex='', minc=10, ming=500, m
 	seur = set.ident(seur, ident.use=ident)
 	seur@data.info$orig.ident = seur@ident
     }
-
+    
     if(length(table(seur@ident)) > 100){
         seur@ident = 'Sample 1'
 	seur@orig.ident = 'Sample 1'

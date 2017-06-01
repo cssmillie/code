@@ -590,24 +590,11 @@ update_signatures = function(seur){
     # Predict host (human or mouse)
     genes = rownames(seur@data)
     
-    if(sum(genes == toupper(genes)) >= .5*length(genes)){
-        print('Using human gene signatures')
-        g1s = '~/aviv/db/markers/g1s.h.txt'
-        g2m = '~/aviv/db/markers/g2m.h.txt'
-	ieg = '~/aviv/db/markers/immediate_early.h.txt'
-    } else {
-        print('Using mouse gene signatures')
-	g1s = '~/aviv/db/markers/g1s.m.txt'
-	g2m = '~/aviv/db/markers/g2m.m.txt'
-	ieg = '~/aviv/db/markers/immediate_early.m.txt'
-    }
-    
     # Calculate signatures
-    seur@data.info$G1S = get_signature(seur, file=g1s)
-    seur@data.info$G2M = get_signature(seur, file=g2m)
+    seur@data.info = cbind(seur@data.info, get_scores(seur, file='cell_cycle'))
+    seur@data.info = cbind(seur@data.info, get_scores(seur, file='early'))
     seur@data.info$nGene = colSums(seur@raw.data > 0)
     seur@data.info$nUMI = colSums(seur@raw.data)
-    seur@data.info$Early = get_signature(seur, file=ieg)
     
     return(seur)
 }
