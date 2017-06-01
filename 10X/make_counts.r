@@ -1,15 +1,13 @@
 library(optparse)
 library(methods)
-library(Matrix)
 library(tidyverse)
 library(tibble)
 
 # Get input arguments
 option_list = list(
 	    make_option('--folder', help='folder name'),
-	    make_option('--prefix', help='barcode prefix', default=''),
-	    make_option('--sparse', help='sparse matrix?', default=FALSE, action='store_true'),
-	    make_option('--out', help='output file name')
+	    make_option('--prefix', help='prepend prefix to barcode', default=''),
+	    make_option('--out', help='output file prefix')
 	    )
 args = parse_args(OptionParser(option_list=option_list))
 
@@ -27,7 +25,9 @@ if(!file.exists(counts_fn)){stop(paste(counts_fn, 'not found'))}
 counts = as.matrix(readMM(counts_fn))
 genes = read.table(genes_fn, sep='\t')[,2]
 barcodes = readLines(barcodes_fn)
-if(args$prefix){
+
+# Add prefix to cell barcodes
+if(args$prefix != ''){
     colnames(counts) = paste0(prefix, '.', barcodes)
 } else {
     colnames(counts) = barcodes
@@ -36,15 +36,9 @@ if(args$prefix){
 # Fix duplicate gene names
 counts = data.frame(aggregate(counts, list(genes), sum), row.names=1)
 
-# Fix cell names
+# Fix cell barcodes
 colnames(counts) = gsub('\\.1$', '', colnames(counts))
 
 # Write output
-if(args$sparse){
-    counts = as.matrix(counts)
-    counts = as(counts, 'sparseMatrix')
-    writeMM(counts, file=out)
-} else {
-    counts = counts %>% rownames_to_column('GENE')
-    write.table(counts, file=out, sep='\t', quote=F, row.names=F)
-}
+counts = counts %>% rownames_to_column('GENE')
+write.table(counts, file=args$out, sep='\t', quote=F, row.names=F)
