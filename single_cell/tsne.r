@@ -1,6 +1,8 @@
-source('~/code/single_cell/parallel.r')
+
 
 project_tsne = function(pca.rot.new, pca.rot.old, tsne.rot.old, perplexity, n.cores=1){
+
+    source('~/code/single_cell/parallel.r')
 
     sum_X_old = rowSums(pca.rot.old^2)
     

@@ -1,3 +1,12 @@
+load_mast = function(){
+    library(S4Vectors, pos=length(search()))
+    library(MAST)
+}
+
+
+check_log_base = function(seur, base=2){
+    total = sum(base**seur@data[,sample(1:ncol(seur@data), 1)] - 1)
+}
 
 
 get_data = function(seur, data.use='tpm', tpm=NULL){
@@ -16,23 +25,14 @@ get_data = function(seur, data.use='tpm', tpm=NULL){
     
     if(data.use == 'tpm'){
         if(is.null(tpm)){
-	    data = 10000*scale(seur@raw.data, center=F, scale=colSums(seur@raw.data))
+	    data = tpm(seur)
 	} else {
 	    data = tpm
 	}
     }
     
     if(data.use == 'log2'){
-	if(is.null(tpm)){
-	    data = 10000*scale(seur@raw.data, center=F, scale=colSums(seur@raw.data))
-	} else {
-	    data = tpm
-	}
-	data = log2(data + 1)
-    }
-
-    if(data.use == 'data'){
-	data = seur@data
+        data = seur@data
     }
     
     return(data)
@@ -117,7 +117,7 @@ select_genes = function(seur, cells.1, cells.2, tpm=NULL, data=NULL, genes.use=N
 }
 
 
-p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=5, min_pct=.1, min_fc=1.25, max_cells=1000, dir='pos',
+p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
 	                  fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
     
     # Select cells
@@ -125,11 +125,11 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
     cells.1 = cells$cells.1
     cells.2 = cells$cells.2
     cells.use = c(cells.1, cells.2)
-    
+
     # Fix variables
     if(length(cells.1) <= 5 | length(cells.2) <= 5){return(c())}
     if(is.null(ident.2)){ident.2 = 'other'}
-    
+
     # TPM for log fold changes
     if(fc.use == 'tpm'){tpm = get_data(seur, data.use='tpm', tpm=tpm)}
     
@@ -148,9 +148,8 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
     print(paste('Testing', length(genes.use), 'genes in', length(cells.use), 'cells'))
     data = data[genes.use, cells.use, drop=F]
     if(is.null(covariates)){
-        covariates = as.data.frame(labels)
+        covariates = data.frame(label=labels)
 	rownames(covariates) = cells.use
-	colnames(covariates) = c('label')
     } else {
         covariates = covariates[cells.use,]
 	covariates$label = labels
@@ -174,24 +173,24 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
 
 
 p.find_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-		              fc.use='tpm', covariates=NULL, formula=NULL, lrt_regex='label', n.cores=1){
+		              fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
     # Pre-calculate TPM
-    tpm = get_data(seur, data.use='tpm')
+    tpm = get_data(seur, data.use='tpm', tpm=tpm)
     
     # Pre-calculate data
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
     # Get functions to export
-    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'format_mast_output')
+    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'gsea.mast', 'format_mast_output')
     
     # Find marker genes
     run_parallel(
         foreach(i=idents, .export=export, .combine=rbind) %dopar% {
 	    print(i)
-	    m = p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, n.cores=n.cores)
+	    m = p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)
 	    return(m)
 	},
 	n.cores = n.cores
@@ -200,24 +199,24 @@ p.find_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.use=N
 
 
 p.pairwise_markers = function(seur, ident.1, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-		              fc.use='tpm', covariates=NULL, lrt_regex='label', n.cores=1){
+		              fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
     # Pre-calculate TPM
-    tpm = get_data(seur, data.use='tpm')
+    tpm = get_data(seur, data.use='tpm', tpm=tpm)
     
     # Pre-calculate data
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
     # Get functions to export
-    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'format_mast_output')
+    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'gsea.mast', 'format_mast_output')
     
     # Find marker genes
     m = run_parallel(
         foreach(i=setdiff(idents, ident.1), .export=export, .combine=rbind) %dopar% {
-	    print(i)
-	    m = p.find_markers(seur, ident.1=ident.1, ident.2=i, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, lrt_regex=lrt_regex, n.cores=n.cores)
+	    print(c(ident.1, i))
+	    m = p.find_markers(seur, ident.1=ident.1, ident.2=i, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)
 	    if(!is.null(m)){m$ref_cluster = i}
 	    return(m)
 	},
@@ -227,24 +226,24 @@ p.pairwise_markers = function(seur, ident.1, data.use='log2', genes.use=NULL, ce
 
 
 p.pairwise_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-		              fc.use='tpm', covariates=NULL, lrt_regex='label', n.cores=1){
+		              fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
     # Pre-calculate TPM
-    tpm = get_data(seur, data.use='tpm')
+    tpm = get_data(seur, data.use='tpm', tpm=tpm)
     
     # Pre-calculate data
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
     # Get functions to export
-    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'format_mast_output')
+    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'gsea.mast', 'format_mast_output')
     
     # Find marker genes
     m = run_parallel(
         foreach(i=idents, .combine=rbind) %:% foreach(j=setdiff(idents, i), .export=export, .combine=rbind) %dopar% {
 	    print(c(i,j))
-	    m = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, lrt_regex=lrt_regex, n.cores=n.cores)
+	    m = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)
 	    if(!is.null(m)){m$ref_cluster = j}
 	    return(m)
 	},
@@ -272,17 +271,17 @@ collapse_pairwise = function(m, col.use='auc', strict=TRUE){
 
 calc_rocr = function(predictions, labels, measures='auc', retx=FALSE){
     library(ROCR)
-
+    
     if(length(measures) == 1){
-        q = performance(prediction(predictions, labels), measures)
+        q = performance(prediction(predictions, labels, label.ordering=levels(labels)), measures)
     } else {
-        q = performance(prediction(predictions, labels), measures[[1]], measures[[2]])
+        q = performance(prediction(predictions, labels, label.ordering=levels(labels)), measures[[1]], measures[[2]])
     }
-
+    
     x = q@x.values
     if(length(x) > 0){x = ifelse(is.na(x[[1]]), 0, x[[1]])}
     y = ifelse(is.na(q@y.values[[1]]), 0, q@y.values[[1]])
-
+    
     if(length(y) > 1){
         if(q@x.name == 'Cutoff'){
 	    i = which.max(y[x != min(x)])
@@ -331,7 +330,7 @@ de.fdr = function(data, labels, sens_cut=.1){
 
     # Calculate classification statistics
     markers = t(sapply(rownames(data), function(a){calc_fdr(data[a,], labels)}))
-    colnames(markers) = c('cutoff', 'acc', 'sens', 'spec', 'fdr', 'f1')
+    colnames(markers) = c('cutoff', 'accuracy', 'sensitivity', 'specificity', 'fdr', 'f1')
     
     # Calculate average difference
     avg_diff = sapply(rownames(data), function(a){as.numeric(diff(tapply(as.numeric(data[a,]), labels, mean)))})
@@ -345,7 +344,7 @@ de.fdr = function(data, labels, sens_cut=.1){
 
 de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     
-    library(MAST)
+    load_mast()
     options(mc.cores=n.cores)
     
     # Make single cell assay (SCA) object
@@ -355,13 +354,14 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     
     # Fit MAST hurdle model
     if(is.null(formula)){
-        formula = as.formula(paste('~' , paste(colnames(covariates), collapse=' + ')))
+        formula = paste('~' , paste(colnames(covariates), collapse=' + '))
     }
+    formula = as.formula(formula)
     zlm = zlm.SingleCellAssay(formula, sca)
     
     # Likelihood ratio test
     if(is.logical(lrt_regex)){lrt_regex = colnames(covariates)}
-    contrasts = grep(paste(lrt_regex, collapse='|'), colnames(zlm@coefC), value=T)
+    contrasts = grep(paste(lrt_regex, collapse='|'), colnames(zlm@coefC), value=T, perl=T)
     print(contrasts)
     res = summary(zlm, doLRT=contrasts)$datatable
     
@@ -377,8 +377,8 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     res = data.frame(subset(res, !is.na(`Pr(>Chisq)`)), stringsAsFactors=F)
     
     # Cleanup results
-    regex = paste(lrt_regex[sapply(lrt_regex, function(a){is.factor(covariates[,a])})], collapse='|')
-    res$contrast = gsub(regex, '', res$contrast)
+    #regex = paste(lrt_regex[sapply(lrt_regex, function(a){is.factor(covariates[,a])})], collapse='|')
+    #res$contrast = gsub(regex, '', res$contrast)
     colnames(res) = c('gene', 'contrast', 'coefD', 'coefC', 'mastfc', 'pval')
     res = res[order(res$contrast, res$pval),]
     
@@ -388,7 +388,7 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
 
 gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=100, n.cores=1){
 
-    library(MAST)
+    load_mast()
     options(mc.cores=n.cores)
     
     # Make single cell assay object
@@ -610,7 +610,7 @@ marker_table = function(mlist, pval=1, padj=1, top=100){
     }
     mlist = mlist[mlist$pval <= pval & mlist$padj <= padj,]
     mlist = mlist[order(mlist$cluster, mlist$pval),]
-    mtab = tapply(mlist$gene, list(drop.levels(mlist$cluster)), function(a){
+    mtab = tapply(mlist$gene, list(mlist$cluster), function(a){
         as.character(a[1:top])
     })    
     mtab = sapply(mtab, function(a){if(!is.null(a)){a}})    

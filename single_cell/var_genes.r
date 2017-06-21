@@ -1,12 +1,10 @@
-library(MASS)
-source('~/dev/adam/rna_seq/r/samples.r')
-source('~/dev/adam/rna_seq/r/util.r')
-
-
 select_var_genes = function(data, method='karthik', vcut=NULL, num_genes=NULL, min.cv2=.25, ret.diffCV=FALSE, do.plot=F){
         
     if(method == 'adam'){
-        
+
+        source('~/dev/adam/rna_seq/r/samples.r')
+        source('~/dev/adam/rna_seq/r/util.r')
+	
 	# Get TPM
 	data = 10000*scale(data, center=FALSE, scale=colSums(data))
 	
@@ -31,6 +29,8 @@ select_var_genes = function(data, method='karthik', vcut=NULL, num_genes=NULL, m
 
 meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=NULL, diffCV.num_genes=NULL, do.spike=FALSE, main.use=NULL, prefix=NULL, do.plot=FALSE, ret.diffCV=FALSE){
 
+    library(MASS)
+    
     # Empirical mean, var and CV
     mean_emp = apply(count.data, 1, mean)
     var_emp = apply(count.data, 1, var)

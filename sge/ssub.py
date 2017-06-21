@@ -89,7 +89,7 @@ def parse_args():
         parser = argparse.ArgumentParser(usage = usage)
         parser.add_argument('-q', default='short', help='queue')
         parser.add_argument('-m', default=0, type=int, help='memory (gb)')
-        parser.add_argument('-o', default='run', help='output prefix')
+        parser.add_argument('-o', default='run', help='output prefix', required=True)
         parser.add_argument('-P', default='regevlab', help='project name')
         parser.add_argument('-H', default='', help='header lines')
         parser.add_argument('-p', default=False, action='store_true', help='print commands')

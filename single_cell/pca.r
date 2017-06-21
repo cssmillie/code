@@ -1,20 +1,20 @@
-#!/usr/bin/Rscript
 
 library(ggplot2)
 library(scales)
 library(grid)
 
 
-# Run random PCA on a Seurat object
-run_rpca = function(seur, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robust=FALSE){
+# Run fast PCA on a Seurat object
+run_rpca = function(seur, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robust=FALSE){
 	 
     # This function calculates a PCA on the DGE in seur@scale.data
+    # If data, this function will still update the Seurat object
     # If cells.use, you may want to rescale data with rescale=TRUE
     
     library(rsvd)    
 
     # Get data and subset
-    data = seur@scale.data
+    if(is.null(data)){data = seur@scale.data}
     if(is.null(genes.use)){genes.use = rownames(data)}
     if(is.null(cells.use)){cells.use = colnames(data)} 
     data = data[genes.use, cells.use]    
@@ -23,6 +23,7 @@ run_rpca = function(seur, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robu
     if(robust == FALSE){
         pca.obj = rpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
     } else {
+        print(dim(data))
         pca.obj = rrpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
     }
     seur@pca.obj = list(pca.obj)
@@ -33,31 +34,31 @@ run_rpca = function(seur, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robu
     return(seur)
 }
 
-project_pca = function(pca_obj, x, genes.use=NULL, cells.use=NULL, rescale=FALSE, scale_obj=NULL){
+project_pca = function(pca_obj, data, genes.use=NULL, cells.use=NULL, rescale=FALSE, scale_obj=NULL){
     
-    # Project x along the PCs in pca_object
+    # Project data along the PCs in pca_object
     
     # Fix PCA object if necessary
     if(length(pca_obj) == 1){pca_obj = pca_obj[[1]]}
     
     # Subset input data
-    if(is.null(genes.use)){genes.use = rownames(x)}
-    if(is.null(cells.use)){cells.use = colnames(x)}
-    x = x[genes.use, cells.use]
+    if(is.null(genes.use)){genes.use = rownames(data)}
+    if(is.null(cells.use)){cells.use = colnames(data)}
+    data = data[genes.use, cells.use]
     
     # Re-scale input data, if necessary
     if(rescale == TRUE){
         if(is.null(scale_obj)){
 	    print('Re-scaling data with center=TRUE, scale=TRUE')
-	    x = t(scale(t(x)))
+	    data = t(scale(t(data)))
 	} else {
 	    print('Re-scaling data with parameters in scale_obj')
-	    x = t(scale(t(x), center=attr(scale, 'attr:center'), scale=attr(scale, 'attr:scale')))
+	    data = t(scale(t(data), center=attr(scale, 'attr:center'), scale=attr(scale, 'attr:scale')))
 	}
     } else {print('Assuming data has already been scaled')}
     
     # Calculate pca.x
-    pca.x = t(x) %*% pca_obj$rotation
+    pca.data = t(data) %*% pca_obj$rotation
     return(data.frame(pca.x))
 }
 

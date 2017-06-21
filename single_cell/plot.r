@@ -27,9 +27,10 @@ material.heat <- function(n)
 }
 
 load_signature = function(file=NULL){
+
     if(!file.exists(file)){file = paste0('~/aviv/db/markers/', file, '.txt')}
     sig = read.table(file, stringsAsFactors=F, row.names=1)
-    sig = structure(strsplit(sig[,1], ','), names=rownames(sig))    
+    sig = structure(strsplit(sig[,1], ','), names=rownames(sig))
     return(sig)
 }
 
@@ -47,7 +48,7 @@ get_scores = function(seur, genes=NULL, file=NULL, top=NULL, combine='mean'){
     if(!is.null(top)){genes = lapply(genes, function(a){as.character(na.omit(a[1:top]))})}
     
     # Calculate TPM
-    data = 10000*scale(seur@raw.data, center=F, scale=colSums(seur@raw.data))
+    data = tpm(seur, genes.use=unique(na.omit(as.character(unlist(genes)))))
     
     # Score modules
     scores = sapply(genes, function(a){
@@ -132,6 +133,7 @@ plot_tsne = function(seur, scores=NULL, ident=TRUE, cells.use=NULL, ymin=0, ymax
 	        geom_point(aes_string(x='x',y='y',colour=col), ...) +
 		theme_minimal(base_size=base_size) +
 		xlab('TSNE 1') + ylab('TSNE 2') +
+		scale_colour_brewer(palette='Set2') + 
 		theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank())
 	    
 	    if(do.label == T){
