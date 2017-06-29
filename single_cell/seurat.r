@@ -20,7 +20,7 @@ msg = function(name, text, verbose){
 }
 
 
-tpm = function(seur, data=NULL, genes.use=NULL, cells.use=NULL, total=1e4){
+calc_tpm = function(seur, data=NULL, genes.use=NULL, cells.use=NULL, total=1e4){
 
     # Calculate TPM from @raw.data or data argument
 
@@ -123,8 +123,8 @@ make_seurat = function(name, seur=NULL, dge=NULL, regex='', minc=10, ming=500, m
 
 
 run_seurat = function(name, seur=NULL, dge=NULL, regex='', cells.use=NULL, genes.use=NULL, minc=10, maxc=0, ming=500, maxg=4000, ident_fxn=NULL, varmet='karthik', min_cv2=.25, num_genes=1500,
-	     do.batch=F, batch.use=NULL, batch.replace=FALSE, design=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, tsne_cor=F, cluster='infomap', k=c(), verbose=T, write_out=T,
-	     do.backup=F, ncores=1, stop_cells=50, marker.test=''){
+	     do.batch=F, batch.use=NULL, batch.replace=FALSE, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, tsne_cor=F, cluster='infomap', k=c(), verbose=T,
+	     write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
 
     seur = make_seurat(name=name, seur=seur, dge=dge, regex=regex, minc=minc, ming=ming, maxg=maxg, genes.use=genes.use, cells.use=cells.use, ident_fxn=ident_fxn, verbose=verbose)
     if(ncol(seur@data) <= stop_cells){return(seur)}
@@ -149,9 +149,8 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', cells.use=NULL, genes
 	    seur@data = bc.data
 	    seur@scale.data = pc.data
 	}
-    } else {
-        pc.data = seur@scale.data
     }
+    if(is.null(pc.data)){pc.data = seur@scale.data}
     
     # Number of significant PCs (stored in seur@data.info$num_pcs)
     if(num_pcs == 0){

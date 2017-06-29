@@ -1,11 +1,16 @@
 load_mast = function(){
+    library(BiocGenerics, pos=length(search()))
     library(S4Vectors, pos=length(search()))
+    library(DelayedArray, pos=length(search()))
     library(MAST)
 }
 
 
-check_log_base = function(seur, base=2){
-    total = sum(base**seur@data[,sample(1:ncol(seur@data), 1)] - 1)
+test_log_base = function(seur, base=2, total=1e4){
+    # Test log base of seur@data
+    j = sample(1:ncol(seur@data), 1)
+    u = sum(base**seur@data[,j] - 1)
+    (1e4 - 1e-2) <= u & u <= (1e4 + 1e-2)
 }
 
 
@@ -25,13 +30,16 @@ get_data = function(seur, data.use='tpm', tpm=NULL){
     
     if(data.use == 'tpm'){
         if(is.null(tpm)){
-	    data = tpm(seur)
+	    data = calc_tpm(seur)
 	} else {
 	    data = tpm
 	}
     }
     
     if(data.use == 'log2'){
+        if(!test_log_base(seur, base=2, total=1e4)){
+	    stop('Error: seur@data log base != 2')
+        }
         data = seur@data
     }
     
@@ -118,18 +126,18 @@ select_genes = function(seur, cells.1, cells.2, tpm=NULL, data=NULL, genes.use=N
 
 
 p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-	                  fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
+	                  fc.use='tpm', tpm=NULL, covariates=NULL, formula='~ label', lrt_regex='label', gsea.boot=100, n.cores=1){
     
     # Select cells
     cells = select_cells(seur, ident.1, ident.2=ident.2, cells.use=cells.use, max_cells=max_cells)
     cells.1 = cells$cells.1
     cells.2 = cells$cells.2
     cells.use = c(cells.1, cells.2)
-
+    
     # Fix variables
     if(length(cells.1) <= 5 | length(cells.2) <= 5){return(c())}
     if(is.null(ident.2)){ident.2 = 'other'}
-
+    
     # TPM for log fold changes
     if(fc.use == 'tpm'){tpm = get_data(seur, data.use='tpm', tpm=tpm)}
     
@@ -144,9 +152,11 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
     genes.use = genes$genes.use
     if(length(genes.use) <= 1){return(c())}
     
-    # Subset data and covariates
+    # Subset data
     print(paste('Testing', length(genes.use), 'genes in', length(cells.use), 'cells'))
     data = data[genes.use, cells.use, drop=F]
+
+    # Build covariates
     if(is.null(covariates)){
         covariates = data.frame(label=labels)
 	rownames(covariates) = cells.use
@@ -155,7 +165,7 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
 	covariates$label = labels
     }
     
-    # Find marker genes
+    # Run marker tests
     if(test.use == 'f'){markers = de.rocr(data, labels, measures='f')}
     if(test.use == 'fdr'){markers = de.fdr(data, labels)}
     if(test.use == 'pr'){markers = de.rocr(data, labels, measures=c('prec', 'rec'))}
@@ -163,9 +173,12 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
     if(test.use == 'gsea'){markers = gsea.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)}
     if(test.use == 'roc'){markers = de.rocr(data, labels, measures='auc')}
     
-    # Append cluster and log fold change
+    # Add cluster information
     markers$cluster = ident.1
-    markers$log2fc = genes$logfc[markers$gene]            
+    markers$ref_cluster = ident.2
+
+    # Log fold change
+    markers$log2fc = genes$logfc[markers$gene]
     
     # Return marker genes
     return(markers)
@@ -252,21 +265,44 @@ p.pairwise_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.u
 }
 
 
-collapse_pairwise = function(m, col.use='auc', strict=TRUE){
+merge_markers = function(fns=NULL, path='.', pattern=NULL, order_by=NULL, cluster_regex=NULL, ref_regex=NULL){
+
+    # Combine markers with option to extract cluster names with regex
+    library(data.table)
     
-    # Collapse a pairwise marker list by the worst comparison
-    if(! col.use %in% colnames(m)){stop('Invalid argument: col.use')}
-    n = length(unique(m$cluster))
-    i = tapply(1:nrow(m), paste(m$cluster, m$gene), function(i){
-        if(length(i) == n-1){
-	    i[which.min(m[i,col.use])]
-	}
-    })
-    m = m[as.integer(unlist(i)),]
-    i = order(m$cluster, -1*m[,col.use])
-    m[i,]
+    # Read files
+    if(is.null(fns)){
+        fns = list.files(path=path, pattern=pattern)
+    }
+    print(paste('Merging', length(fns), 'files'))
+
+    # Test regex
+    if(!is.null(cluster_regex)){print(paste('Cluster regex:', gsub(cluster_regex, '\\1', fns[[1]], perl=T)))}
+    if(!is.null(ref_regex)){print(paste('Ref regex:', gsub(ref_regex, '\\1', fns[[1]], perl=T)))}
+
+    # Get markers
+    m = do.call(rbind, lapply(fns, function(fn){
+	mi = as.data.frame(fread(fn, sep='\t', header=T, stringsAsFactors=F))
+	if(!is.null(cluster_regex)){mi[['cluster']] = gsub(cluster_regex, '\\1', fn)}
+	if(!is.null(ref_regex)){mi[['ref_cluster']] = gsub(ref_regex, '\\1', fn)}
+	mi
+    }))
+    return(m)
 }
 
+
+collapse_markers = function(m, group_by=list(cluster, gene), collapse_by=which.max(mastfc), strict=FALSE){
+
+    # Collapse pairwise marker list
+    # Uses non-standard evaluation (see default arguments)
+    
+    library(data.table)
+    group_by = substitute(group_by)
+    collapse_by = substitute(collapse_by)
+    
+    m = setDT(m)[,{mi = .SD[eval(collapse_by)]; mi$N = .N; mi}, group_by]
+    return(as.data.frame(m))
+}
 
 
 calc_rocr = function(predictions, labels, measures='auc', retx=FALSE){
@@ -357,13 +393,13 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
         formula = paste('~' , paste(colnames(covariates), collapse=' + '))
     }
     formula = as.formula(formula)
-    zlm = zlm.SingleCellAssay(formula, sca)
+    zlm.obj = zlm(formula, sca)
     
     # Likelihood ratio test
     if(is.logical(lrt_regex)){lrt_regex = colnames(covariates)}
-    contrasts = grep(paste(lrt_regex, collapse='|'), colnames(zlm@coefC), value=T, perl=T)
+    contrasts = grep(paste(lrt_regex, collapse='|'), colnames(zlm.obj@coefC), value=T, perl=T)
     print(contrasts)
-    res = summary(zlm, doLRT=contrasts)$datatable
+    res = summary(zlm.obj, doLRT=contrasts)$datatable
     
     # Get component information
     res.f = res[res$component == 'logFC', .(primerid, contrast, coef)]
@@ -377,13 +413,38 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     res = data.frame(subset(res, !is.na(`Pr(>Chisq)`)), stringsAsFactors=F)
     
     # Cleanup results
-    #regex = paste(lrt_regex[sapply(lrt_regex, function(a){is.factor(covariates[,a])})], collapse='|')
-    #res$contrast = gsub(regex, '', res$contrast)
     colnames(res) = c('gene', 'contrast', 'coefD', 'coefC', 'mastfc', 'pval')
     res = res[order(res$contrast, res$pval),]
     
     options(mc.cores=1)
     return(res)
+}
+
+
+gsea.fisher = function(gene_set1, gene_set2, reference='~/aviv/db/map_gene/hg19_genes.txt', n.cores=1){
+
+    # GSEA with fisher test
+    # gene_set1 = list of genes
+    # gene_set2 = list of genes
+    # return matrix of p-values
+
+    # convert gene sets to list
+    if(typeof(gene_set1) != 'list'){gene_set1 = list(gene_set1)}
+    if(typeof(gene_set2) != 'list'){gene_set2 = list(gene_set2)}
+    
+    # pairwise fisher tests
+    all_genes = readLines(reference)
+    m = run_parallel(
+        foreach(i=gene_set1, .combine=rbind) %:% foreach(j=gene_set2, .combine=c) %dopar% {
+	    u = factor(all_genes %in% i, levels=c(FALSE, TRUE))
+	    v = factor(all_genes %in% j, levels=c(FALSE, TRUE))
+	    fisher.test(table(u,v))$pval
+	},
+	n.cores=n.cores
+    )
+    rownames(m) = names(gene_set1)
+    colnames(m) = names(gene_set2)
+    return(m)
 }
 
 gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=100, n.cores=1){
@@ -400,33 +461,29 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
     if(is.null(formula)){
         formula = as.formula(paste('~' , paste(colnames(covariates), collapse=' + ')))
     }
-    zlm = zlm.SingleCellAssay(formula, sca)
+    zlm.obj = zlm(formula, sca)
     
     # Calculate bootstraps
-    boot = bootVcov1(zlm, gsea.boot)
+    boot = bootVcov1(zlm.obj, gsea.boot)
     
     # Get GO gene list
     genes = read.table('~/aviv/db/gopca/go_annotations_human.tsv', sep='\t', stringsAsFactors=F, row.names=1)
     sets = structure(strsplit(genes[,4], ','), names=rownames(genes))
-    sets = lapply(sets, function(a){b = as.integer(na.omit(match(a, rownames(zlm@coefC))))})
+    sets = lapply(sets, function(a){b = as.integer(na.omit(match(a, rownames(zlm.obj@coefC))))})
     sets = sets[sapply(sets, length) >= 5]
     
     # Get hypothesis columns
-    names = colnames(zlm@coefC)[grep(paste(lrt_regex, collapse='|'), colnames(zlm@coefC))]
+    names = colnames(zlm.obj@coefC)[grep(paste(lrt_regex, collapse='|'), colnames(zlm.obj@coefC))]
     
     # Perform GSEA
     res = lapply(names, function(a){
-        gsea = summary(gseaAfterBoot(zlm, boot, sets, CoefficientHypothesis(a)))
+        gsea = summary(gseaAfterBoot(zlm.obj, boot, sets, CoefficientHypothesis(a)))
 	gsea$name = genes[as.character(gsea$set), 3]
 	gsea$genes = genes[as.character(gsea$set), 4]
 	gsea$contrast = a
 	return(gsea)
     })
     res = do.call(rbind, res)
-    
-    # Cleanup results
-    regex = paste(lrt_regex[sapply(lrt_regex, function(a){is.factor(covariates[,a])})], collapse='|')
-    res$contrast = gsub(regex, '', res$contrast)
     
     options(mc.cores=1)
     return(res)

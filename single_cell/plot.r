@@ -48,7 +48,7 @@ get_scores = function(seur, genes=NULL, file=NULL, top=NULL, combine='mean'){
     if(!is.null(top)){genes = lapply(genes, function(a){as.character(na.omit(a[1:top]))})}
     
     # Calculate TPM
-    data = tpm(seur, genes.use=unique(na.omit(as.character(unlist(genes)))))
+    data = calc_tpm(seur, genes.use=unique(na.omit(as.character(unlist(genes)))))
     
     # Score modules
     scores = sapply(genes, function(a){
