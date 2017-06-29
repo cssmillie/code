@@ -1,0 +1,6 @@
+# Taken from Set1 in RColorBrewer
+blue_orange_set1    #1f78b4,#ff7f00,#a6cee3,#fdbf6f
+# Found on ggpubr website: http://www.sthda.com/english/rpkgs/ggpubr/
+ggpubr	#00AFBB,#E7B800,#FC4E07
+# Found at https://rpubs.com/edwardhust/beautiful_ggplot2
+grey_orange_blue	#999999,#E69F00,#56B4E9
