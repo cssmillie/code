@@ -9,7 +9,6 @@ usage:
 '''
 
 # set global variables
-username = 'csmillie'
 cluster = 'broad' # options = broad,amazon,coyote
 
 # amazon header - sun grid engine
@@ -93,6 +92,8 @@ def parse_args():
         parser.add_argument('-P', default='regevlab', help='project name')
         parser.add_argument('-H', default='', help='header lines')
         parser.add_argument('-p', default=False, action='store_true', help='print commands')
+        parser.add_argument('-u', default='', help='username')
+        parser.add_argument('-s', default='gold.broadinstitute.org', help='server')
         parser.add_argument('commands', nargs='?', default='')
 
         # parse arguments from stdin
@@ -105,6 +106,7 @@ def parse_args():
 
 
 class Submitter():
+
     
     def __init__(self, cluster=cluster):
         
@@ -113,20 +115,21 @@ class Submitter():
        
         # cluster parameters
         self.cluster = cluster
-        self.username = username
         self.m = args.m
         self.q = args.q
         self.o = args.o
         self.P = args.P
         self.p = args.p
         self.H = args.H
+        self.u = args.u
+        self.s = args.s
         self.commands = args.commands
         
         if self.cluster == 'broad':
             self.header = broad_header
             self.submit_cmd = 'qsub'
             self.parse_job = lambda x: re.search('Your job-array (\d+)', x).group(1)
-            self.stat_cmd = 'qstat -g d'
+            self.stat_cmd = 'qstat -g d | egrep -v "^job|^-"'
             self.task_id = '$SGE_TASK_ID'
         
         if self.cluster == 'coyote':
@@ -146,40 +149,39 @@ class Submitter():
         if self.m == 0:
             self.m = None
     
-    
+
     def get_header(self, commands, error='error', array=False):
         h = self.header(n_jobs = len(commands), error=error, queue=self.q, project=self.P, memory=self.m, array=array)
         h = h + self.H + '\n'
         return h
     
     
-    def get_njobs(self):
-        [out, err] = self.job_status()
+    def system(self, commands):
+        if self.u:
+            cwd = os.path.realpath(os.getcwd())
+            commands = ['ssh %s@%s "cd %s; %s"' %(self.u, self.s, cwd, command) for command in commands]    
+        process = subprocess.Popen(commands, stdout=subprocess.PIPE, stderr=open(os.devnull, 'w'), shell=True)
+        [out, err] = process.communicate()
+        return out
+
+    
+    def qstat(self):
+        # return job status
+        commands = [self.stat_cmd]
+        out = self.system(commands)
+        out = [line for line in out.split('\n')]
+        return out
+
+
+    def njobs(self):
+        out = self.qstat()
         njobs = len(out)
         return njobs
     
     
-    def mktemp(self, commands, prefix='run', suffix='.txt', array=False):
-        # make temporary file and return [fh, fn]
-        fh, fn = tempfile.mkstemp(dir=os.getcwd(), prefix=prefix, suffix=suffix)
-        os.close(fh)
-        fh = open(fn, 'w')
-        fh.write(self.get_header(commands=commands, error='%s.err' %(fn), array=array))
-        fn = os.path.abspath(fn)
-        return fh, fn
-
-    
-    def job_status(self):
-        # return job status
-        process = subprocess.Popen([self.stat_cmd], stdout = subprocess.PIPE, shell=True)
-        [out, err] = process.communicate()
-        out = [line for line in out.split('\n') if self.username in line]
-        return [out, err]
-       
-
     def jobs_finished(self, job_ids):
         # check if jobs are finished
-        [out, err] = self.job_status()
+        out = self.qstat()
         for job in out:
             job = job.split()[0] # job is the first column of qstat
             for job_id in job_ids:
@@ -188,12 +190,12 @@ class Submitter():
         return True
     
     
-    def submit_jobs(self, fns):
+    def qsub(self, fns):
         # submit jobs to the cluster
         job_ids = []
         for fn in fns:
-            process = subprocess.Popen(['%s %s' %(self.submit_cmd, fn)], stdout = subprocess.PIPE, shell=True)
-            [out, error] = process.communicate()
+            commands = ['%s %s' %(self.submit_cmd, fn)]
+            out = self.system(commands)
             job_ids.append(self.parse_job(out))
             print('Submitting job %s' %(fn))
         return job_ids
@@ -201,9 +203,13 @@ class Submitter():
     
     def write_array(self, commands):
         
-        # get file names
+        # get filenames
         fn1 = '.a.%s.sh' %(self.o)
         fn2 = '.a.%s.err' %(self.o)
+
+        # warn if file exists
+        if os.path.exists(fn1):
+            print 'Warning: file %s exists' %(fn1)
         
         # write job array
         fh1 = open(fn1, 'w')
@@ -212,7 +218,7 @@ class Submitter():
             fh1.write('job_array[%d]="%s"\n' %(i+1, command))
         fh1.write('\neval ${job_array[%s]}\n\n' %(self.task_id))
         fh1.close()
-        os.chmod(fn1, stat.S_IRWXU)
+        os.chmod(fn1, 0644)
         print('Writing array %s' %(fn1))
         
         # touch error log
@@ -241,7 +247,7 @@ class Submitter():
             commands = [commands]
         if self.p == False:
             array_fn, error_fn = self.write_array(commands)
-            job_ids = self.submit_jobs([array_fn])
+            job_ids = self.qsub([array_fn])
             self.write_error(error_fn, commands, job_ids)
             return job_ids
         elif self.p == True:
@@ -256,7 +262,7 @@ class Submitter():
         if self.p == False:
             while True:
                 if max_jobs:
-                    if self.get_njobs() <= max_jobs:
+                    if self.njobs() <= max_jobs:
                         break
                 else:
                     if self.jobs_finished(job_ids):

@@ -38,6 +38,15 @@ select_keys = function(map, keys, invert=FALSE){
 }
 
 
+flatten_keys = function(map, keys){
+
+    # Return list of non-overlapping keys with length(values) = 1
+    # e.g. flat_keys('Tcell') = c('Tcell', list of non-Tcells)
+    o = select_keys(map, keys, invert=T)
+    c(names, o[sapply(map[o], length) == 1])
+}
+
+
 load_anno = function(fn='~/Gut_Human/csmillie/anno/tree_annotations.txt', key='ident', value='name'){
     x = load_map(fn, key, value)
 }

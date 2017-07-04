@@ -436,9 +436,9 @@ gsea.fisher = function(gene_set1, gene_set2, reference='~/aviv/db/map_gene/hg19_
     all_genes = readLines(reference)
     m = run_parallel(
         foreach(i=gene_set1, .combine=rbind) %:% foreach(j=gene_set2, .combine=c) %dopar% {
-	    u = factor(all_genes %in% i, levels=c(FALSE, TRUE))
-	    v = factor(all_genes %in% j, levels=c(FALSE, TRUE))
-	    fisher.test(table(u,v))$pval
+	    u = factor(all_genes %in% unlist(i), levels=c(FALSE, TRUE))
+	    v = factor(all_genes %in% unlist(j), levels=c(FALSE, TRUE))
+	    fisher.test(table(u,v))$p.value
 	},
 	n.cores=n.cores
     )
