@@ -93,10 +93,6 @@ def parse_args():
 
     if __name__ == '__main__':
         
-        # print usage statement
-        usage = "\n\n  cat list_of_commands.txt | ssub -q long -m 8 -o test\n"
-        usage +="  ssub -q short -m 16 'command 1; command 2; command 3;"
-        
         # add command line arguments
         parser = argparse.ArgumentParser(usage = usage)
         parser.add_argument('-q', default='short', help='queue')
@@ -107,7 +103,7 @@ def parse_args():
         parser.add_argument('-p', default=False, action='store_true', help='print commands')
         parser.add_argument('-u', default='', help='username')
         parser.add_argument('-s', default='gold.broadinstitute.org', help='server')
-        parser.add_argument('-d', default=False, action='store_true', help='direct submit (do not write scripts)')
+        parser.add_argument('-d', default=False, action='store_true', help='direct submit (no scripts)')
         parser.add_argument('commands', nargs='?', default='')
 
         # parse arguments from stdin
@@ -172,6 +168,7 @@ class Submitter():
     
     
     def system(self, commands):
+        # run system command and return output
         if self.u:
             cwd = os.path.realpath(os.getcwd())
             commands = ['ssh %s@%s "cd %s; %s"' %(self.u, self.s, cwd, command) for command in commands]    
@@ -189,6 +186,7 @@ class Submitter():
 
 
     def njobs(self):
+        # number of jobs in queue
         out = self.qstat()
         njobs = len(out)
         return njobs
@@ -199,7 +197,7 @@ class Submitter():
         out = self.qstat()
         for job in out:
             if job != '':
-                job = job.strip().split()[0] # job is the first column of qstat
+                job = job.strip().split()[0] # job is first column of qstat
                 for job_id in job_ids:
                     if job_id in job:
                         return False
@@ -265,8 +263,7 @@ class Submitter():
             if self.d == False:
                 array_fn, error_fn = self.write_array(commands)
             else:
-                if len(commands) > 1:
-                    quit('Error: self.d == True and len(commands) > 1')
+                assert len(commands) == 1
                 array_fn = commands[0]
             job_ids = self.qsub([array_fn])
             self.write_error(error_fn, commands, job_ids)
@@ -312,7 +309,7 @@ class Submitter():
 
     
     def submit_pipeline(self, pipeline):
-        # a pipeline is a list of lists of commands
+        # run list of commands sequentially
         for commands in pipeline:
             self.submit_and_wait(commands)
     
