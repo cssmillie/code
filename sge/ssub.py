@@ -71,8 +71,11 @@ class EmptyParser:
         self.m = 0
         self.o = 'run'
         self.P = 'regevlab'
-        self.p = False
         self.H = ''
+        self.p = False
+        self.u = ''
+        self.s = 'gold.broadinstitute.org'
+        self.d = False
         self.commands = []
 
 
@@ -94,6 +97,7 @@ def parse_args():
         parser.add_argument('-p', default=False, action='store_true', help='print commands')
         parser.add_argument('-u', default='', help='username')
         parser.add_argument('-s', default='gold.broadinstitute.org', help='server')
+        parser.add_argument('-d', default=False, action='store_true', help='direct submit (do not write scripts)')
         parser.add_argument('commands', nargs='?', default='')
 
         # parse arguments from stdin
@@ -123,6 +127,7 @@ class Submitter():
         self.H = args.H
         self.u = args.u
         self.s = args.s
+        self.d = args.d
         self.commands = args.commands
         
         if self.cluster == 'broad':
@@ -183,10 +188,11 @@ class Submitter():
         # check if jobs are finished
         out = self.qstat()
         for job in out:
-            job = job.split()[0] # job is the first column of qstat
-            for job_id in job_ids:
-                if job_id in job:
-                    return False
+            if job != '':
+                job = job.strip().split()[0] # job is the first column of qstat
+                for job_id in job_ids:
+                    if job_id in job:
+                        return False
         return True
     
     
@@ -246,7 +252,12 @@ class Submitter():
         if type(commands) == str:
             commands = [commands]
         if self.p == False:
-            array_fn, error_fn = self.write_array(commands)
+            if self.d == False:
+                array_fn, error_fn = self.write_array(commands)
+            else:
+                if len(commands) > 1:
+                    quit('Error: self.d == True and len(commands) > 1')
+                array_fn = commands[0]
             job_ids = self.qsub([array_fn])
             self.write_error(error_fn, commands, job_ids)
             return job_ids
@@ -261,13 +272,13 @@ class Submitter():
         print '\t' + '\n\t'.join(job_ids)
         if self.p == False:
             while True:
+                time.sleep(5)
                 if max_jobs:
                     if self.njobs() <= max_jobs:
                         break
                 else:
                     if self.jobs_finished(job_ids):
                         break
-                time.sleep(5)
     
     def submit_and_wait(self, commands, outs=[], retry=0, max_jobs=''):
         # submit job array and wait for it to finish
