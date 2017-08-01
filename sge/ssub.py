@@ -4,8 +4,18 @@ import argparse, os, os.path, re, stat, subprocess, sys, tempfile, time
 
 '''
 usage:
-  cat list_of_commands.txt | ssub -n 100 -q short -m 8
-  ssub -q long -m 8 "command1; command2; command3;"
+
+  command line:
+  cat list_of_commands.txt | ssub -q short -m 8 -o name
+  ssub -q long -m 8 -o name "command1; command2; command3;"
+  
+  python:
+  import ssub
+  Submitter = ssub.Submitter()
+  Submitter.m = 16
+  Submitter.q = 'long'
+  Submitter.submit(cmd) # single command
+
 '''
 
 # set global variables
