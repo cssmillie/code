@@ -154,7 +154,7 @@ class Task():
             self.u = self.U.pop(0)
         
         # update uid and increment n
-        if job_id and task_id:
+        if job_id != '' and task_id != '':
             self.uid = '%s;%s' %(job_id, task_id)
             self.n += 1
         
@@ -292,7 +292,6 @@ class Submitter():
             q = self.q
         if u is None:
             u = self.u
-        print m, q, u
         task = Task(command, infiles=infiles, outfiles=outfiles, intasks=intasks, m=m, q=q, u=u)
         return task
     
@@ -336,7 +335,7 @@ class Submitter():
                     task.status = 'failed'
             else:
                 task.status = 'finished'        
-
+        
         # pipelines
         for task in self.tasks:
             if not task.check_intasks():
@@ -365,6 +364,7 @@ class Submitter():
     
     
     def assign_tasks_to_users(self, tasks, users, shuffle=True):
+        random.shuffle(users)
         users = itertools.cycle(users)
         if shuffle == True:
             random.shuffle(tasks)
@@ -387,15 +387,19 @@ class Submitter():
         self.write_log(text)
     
     
-    def submit(self, commands=[], tasks=[], status='ready', users=None):
+    def submit(self, commands=[], tasks=[], status='ready', randomize=True):
         
-        # add tasks
+        # add commands
         for command in commands:
             self.add_command(command)
+
+        # add tasks
+        for task in tasks:
+            self.add_task(task)
         
         # assign tasks to users
-        if users is not None:
-            self.assign_tasks_to_users(tasks, users, shuffle=True)
+        if randomize:
+            self.assign_tasks_to_users(self.tasks, self.users[:], shuffle=True)
         
         # get tasks
         tasks = self.group_tasks_by_status(self.tasks)[status]
@@ -435,7 +439,7 @@ class Submitter():
             
             # update objects
             for i,tj in enumerate(ti):
-                tj.update_resources(job_id=job_id, task_id=i)
+                tj.update_resources(job_id=job_id, task_id=i+1)
     
     
     def check_finished(self):
@@ -458,18 +462,20 @@ class Submitter():
         return False
     
     
-    def submit_pipeline(self, commands=[], tasks=[], users=''):
+    def submit_pipeline(self, commands=[], tasks=[], randomize=True):
         
         # add tasks to submitter
         for command in commands:
-            self.add_task(command, user=next(temp))
+            self.add_task(command)
         
         # run jobs until finished
         while not self.check_finished():
+            # summarize tasks
+            self.summarize_tasks()
             # submit 'ready' jobs
-            self.submit(status='ready', users=users)
+            self.submit(status='ready', randomize=randomize)
             # submit 'retry' jobs (increased resources)
-            self.submit(status='retry', users=users)
+            self.submit(status='retry', randomize=randomize)
             # wait until next submission
             time.sleep(self.w)
     
