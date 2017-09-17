@@ -120,18 +120,18 @@ class Task():
         
         self.command = command
 
-        # current parameters
-        self.m = None
-        self.q = None
-        self.u = None
+        # each task requests separate resources
+        self.m = None # memory
+        self.q = None # queue
+        self.u = None # username
         
-        # parameter lists
+        # lists of resources to iterate through
         fix_type = lambda x: x if type(x) == list else [x]
         self.M = fix_type(m)[:]
         self.Q = fix_type(q)[:]
         self.U = fix_type(u)[:]
         
-        # scheduling
+        # job scheduling parameters
         self.infiles = infiles
         self.intasks = intasks
         self.outfiles = outfiles
@@ -139,22 +139,26 @@ class Task():
         self.uid = ''
         self.n = 0
         
-        # update parameters
+        # set initial resources to M[0], Q[0], U[0]
         self = self.update_resources()
     
     
     def update_resources(self, job_id='', task_id=''):
-        # run parameters
+        
+        # get next parameters in M, Q, and U
         if len(self.M) > 0:
             self.m = self.M.pop(0)
         if len(self.Q) > 0:
             self.q = self.Q.pop(0)
         if len(self.U) > 0:
             self.u = self.U.pop(0)
-        # task tracking
+        
+        # update uid and increment n
         if job_id and task_id:
             self.uid = '%s;%s' %(job_id, task_id)
             self.n += 1
+        
+        # return task with increased resources
         return self
     
     
@@ -164,29 +168,35 @@ class Task():
 
     
     def check_infiles(self):
+        # test if all infiles exist
         return check_files(self.infiles)
 
     
     def check_outfiles(self):
+        # test if all outfiles exist
         return check_files(self.outfiles)
 
     
     def check_intasks(self):
+        # test if all intasks finished
         for task in self.intasks:
             if task.status != 'finished':
                 return False
         return True
-
+    
     
     def job_id(self):
+        # return job id
         return self.uid.split(';')[0]
 
     
     def task_id(self):
+        # return task id
         return self.uid.split(';')[1]
 
     
     def resources(self):
+        # return resources string
         return '%s.%s.%s' %(self.u, self.q, self.m)
 
     
@@ -227,10 +237,10 @@ class Submitter():
         
         # account setup
         self.me = 'csmillie'
-        self.users = ['csmillie', 'eugened', 'mbiton']
+        self.users = ['', 'eugened', 'mbiton']
         
         # cluster parameters
-        self.stat_cmd = 'qstat -g d -u %s | egrep -v "^job|^-"' %(','.join(self.users))
+        self.stat_cmd = 'qstat -g d -u %s | egrep -v "^job|^-"' %(','.join(self.users + [self.me]))
         self.submit_cmd = 'qsub'
         self.parse_job = lambda x: re.search('Your job-array (\d+)', x).group(1)
         
