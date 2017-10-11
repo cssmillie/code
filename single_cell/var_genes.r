@@ -1,35 +1,111 @@
-select_var_genes = function(data, method='karthik', vcut=NULL, num_genes=NULL, min.cv2=.25, ret.diffCV=FALSE, do.plot=F){
-        
-    if(method == 'adam'){
 
-        source('~/dev/adam/rna_seq/r/samples.r')
-        source('~/dev/adam/rna_seq/r/util.r')
-	
-	# Get TPM
-	data = 10000*scale(data, center=FALSE, scale=colSums(data))
-	
-	# Select variable genes
-	var_genes = get.variable.genes(data, min.cv2=min.cv2)
-	i = (!is.na(var_genes[,4])) & (var_genes[,4] <= .05)
-	var_genes = var_genes[i, 1]
 
+mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, window_size=100, do.plot=FALSE){
+    
+    # calculate mean and cv
+    u = apply(data, 1, mean)
+    v = apply(data, 1, var)
+    i = u > 0 & v > 0
+    u = u[i]
+    v = v[i]
+    cv = sqrt(v)/u
+
+    # fit loess curve
+    l = loess(log(cv) ~ log(u), family='symmetric')
+    d = log(cv) - l$fitted
+    
+    # get variable genes
+    if(use_bins == TRUE){
+    
+        # select variable genes from equal frequency bins
+        library(Hmisc)
+	k = as.integer(num_genes/num_bins)
+        var_genes = as.character(unlist(tapply(d, cut2(u, g=num_bins), function(a) names(sort(a, decreasing=T)[1:k]))))
+
+    } else {
+
+        # select variable genes with rolling z-scores
+        library(zoo)
+
+	# re-order by mean expression
+	D = d[order(u)]
+
+	# rolling z-scores (only use unique values)
+	ru = rollapply(D, window_size, function(a) mean(unique(a)), partial=T)
+	rs = rollapply(D, window_size, function(a) sd(unique(a)), partial=T)
+	rz = structure((D - ru)/rs, names=names(D))
+	
+	# select variable genes
+	var_genes = names(sort(rz, decreasing=T)[1:num_genes])
+    }
+    
+    # plot results
+    if(do.plot == TRUE){
+	colors = c('#cccccc', 'black')[as.integer(names(u) %in% var_genes) + 1]
+        plot(log(u), log(cv), pch=16, col=colors, xlab='log(mean)', ylab='log(cv)')
+	lines(l$x[order(u)], l$fitted[order(u)], col='red', lw=2)
     }
 
-    if(method == 'karthik'){
+    return(var_genes)
+}
 
-	# Get variable genes
-	var_genes = meanCVfit(data, diffCV.cutoff=vcut, diffCV.num_genes=num_genes, ret.diffCV=ret.diffCV, do.plot=do.plot)
+
+get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
+
+    source('~/code/single_cell/parallel.r')
+
+    # Split by cell identity
+    if(is.null(ident)){ident = rep(1, ncol(counts))}
+    ident = as.factor(as.character(ident))
+    print(table(ident))
     
+    var_genes = sapply(levels(ident), function(i){print(i)
+
+            # Start plotting device
+	    if(!is.null(prefix)){png(paste(prefix, i, 'png', sep='.'), w=1000, h=800)}
+
+	    # Subsample data
+	    data = data[,ident == i]
+	    if(do.tpm){data = calc_tpm(data=data)}
+    	    genes.use = rowSums(data > 0) >= min_cells	    
+	    data = data[genes.use,]
+	    print(dim(data))
+	    
+	    if(method == 'loess'){
+	        vi = mean_cv_loess(data, num_genes=num_genes, do.plot=do.plot, ...)
+	    }
+	    if(method == 'adam'){
+	        source('~/dev/adam/rna_seq/r/samples.r')
+		source('~/dev/adam/rna_seq/r/util.r')
+	        vi = get.variable.genes(data, do.plot=do.plot, ...)
+		i = (!is.na(var_genes[,4])) & (var_genes[,4] <= .05)
+		vi = vi[i,1]
+	    }
+	    if(method == 'karthik'){
+	        vi = meanCVfit(data, diffCV.num_genes=num_genes, do.plot=do.plot, ...)
+	    }
+
+	    # Stop plotting device
+	    if(!is.null(prefix)){dev.off()}
+	    
+	    return(vi)
+    })
+    
+    if(do.flatten == TRUE){
+        a = sort(table(as.character(unlist(var_genes))), decreasing=T)
+	k = a[num_genes]
+	u = names(a)[a > k]
+	v = sample(names(a)[a == k], num_genes - length(u))
+	var_genes = c(u,v)
     }
-    
-    # Return variable genes
+
     return(var_genes)
 }
 
 
 meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=NULL, diffCV.num_genes=NULL, do.spike=FALSE, main.use=NULL, prefix=NULL, do.plot=FALSE, ret.diffCV=FALSE){
 
-    library(MASS)
+    require(MASS)
     
     # Empirical mean, var and CV
     mean_emp = apply(count.data, 1, mean)
@@ -66,13 +142,14 @@ meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=N
     if(ret.diffCV == TRUE){
         return(diffCV)
     }
+    print(length(diffCV))
     
     if(!is.null(diffCV.cutoff)){
 	pass.cutoff=names(diffCV)[which(diffCV > diffCV.cutoff & (mean_emp > 0.005 & mean_emp < 100))]
     } else if (!is.null(diffCV.num_genes)){
         pass.cutoff=names(sort(diffCV,decreasing=T)[1:diffCV.num_genes])
     }
-    
+    print(pass.cutoff)
     if(do.plot == T){
     plot(mean_emp,cv_emp,pch=16,cex=0.5,col="black",xlab="Mean Counts",ylab="CV (counts)", log="xy", main = main.use)
     if (do.spike) points(mean_emp[spike.genes],cv_emp[spike.genes],pch=16,cex=0.5,col="red")
