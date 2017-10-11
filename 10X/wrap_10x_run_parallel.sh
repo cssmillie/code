@@ -1,33 +1,44 @@
 #!/bin/sh
-
 #$ -cwd
 #$ -q long
 #$ -P regevlab
-
-#$ -m be
 #$ -N run10X
-#$ -t 1-4
-#$ -l h_vmem=8g
+#$ -l h_vmem=4g
 #$ -e run.error
 #$ -o run.log
+#$ -t 1-NUM
 
 source /broad/software/scripts/useuse
 reuse UGER
 export PATH=/seq/regev_genome_portal/SOFTWARE/10X/cellranger-VERSION:$PATH
 
-SEED=$(awk "NR==$SGE_TASK_ID" BARCODES)
+SEED=$(awk "NR==($SGE_TASK_ID+1)" CSV)
+channel_lane=$(echo "$SEED" | cut -d$',' -f1)
+channel_id=$(echo "$SEED" | cut -d$',' -f2)
+channel_indices=$(echo "$SEED" | cut -d$',' -f3)
 
-channel_id=$(echo "$SEED" | cut -d$'\t' -f1)
-channel_indices=$(echo "$SEED" | cut -d$'\t' -f2)
-
-echo $channel_id
-echo $channel_indices
-
+command="
 cellranger count --id=${channel_id} \
-               --transcriptome=REF \
-               --fastqs=FQPATH \
-               --jobmode=sge \
-               --maxjobs=10 \
-               --mempercore=16 \
-               --jobinterval=2500 \
-               --indices=${channel_indices}
+	   --transcriptome=REF \
+	   --fastqs=FASTQ_PATH \
+	   --jobmode=/home/unix/csmillie/code/10X/sge.template \
+	   --mempercore=8 \
+	   --nosecondary
+"
+
+# Add lanes
+if [[ $channel_lane  != '*' ]]; then
+    command="${command} --lanes=${channel_lane}"
+fi
+
+# If demultiplexed with --demux, add indices
+if [[ -e ./SERIAL/BCL_PROCESSOR_CS ]]; then
+    command="${command} --indices=${channel_indices}"
+# If demultiplexed with --mkfastq, add sample
+elif [[ -e ./SERIAL/MAKE_FASTQS_CS ]]; then
+    command="${command} --sample=${channel_id}"
+else
+    exit 1
+fi
+
+${command}

@@ -1,15 +1,15 @@
 # This script merges multiple DGEs into a single DGE
 
 # Read input arguments
-library(optparse)
+require(optparse)
 option_list = list(make_option('--map', help='input mapping file (1=project, 2=path, 3=pattern)'),
                    make_option('--ming', help='genes per cell cutoff', type='integer'),
                    make_option('--out', help='output file')
                    )
 args = parse_args(OptionParser(option_list=option_list))
 
-library(plyr)
-library(tidyverse)
+require(plyr)
+require(tidyverse)
 
 # Extract variables
 map = read.table(args$map, stringsAsFactors=F)
@@ -66,6 +66,6 @@ dge = dge[, colSums(dge > 0) >= args$ming]
 colnames(dge) = gsub('^\\.', '', colnames(dge))
 
 # Write DGE to outfile
-library(tibble)
+require(tibble)
 dge = dge %>% rownames_to_column('GENE')
 write.table(dge, file=args$out, quote=F, sep='\t', row.names=F)

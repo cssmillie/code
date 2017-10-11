@@ -1,6 +1,6 @@
 library(optparse)
 library(tibble)
-source('~/aviv/code/single_cell/seurat.r')
+source('~/code/single_cell/seurat.r')
 
 if(interactive()){
 args = list(name='./outs/Naive_DC', dge='./outs/Naive_DC.dge.txt.gz', ming=500, sigdb='')

@@ -1,3 +1,4 @@
+library(Matrix)
 library(optparse)
 library(methods)
 library(tidyverse)
@@ -5,9 +6,9 @@ library(tibble)
 
 # Get input arguments
 option_list = list(
-	    make_option('--folder', help='folder name'),
+	    make_option('--folder', help='folder name (contains genes.tsv, barcodes.tsv, matrix.mtx)'),
 	    make_option('--prefix', help='prepend prefix to barcode', default=''),
-	    make_option('--out', help='output file prefix')
+	    make_option('--out', help='output file name')
 	    )
 args = parse_args(OptionParser(option_list=option_list))
 
@@ -28,7 +29,7 @@ barcodes = readLines(barcodes_fn)
 
 # Add prefix to cell barcodes
 if(args$prefix != ''){
-    colnames(counts) = paste0(prefix, '.', barcodes)
+    colnames(counts) = paste0(args$prefix, '.', barcodes)
 } else {
     colnames(counts) = barcodes
 }

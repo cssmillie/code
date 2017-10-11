@@ -40,10 +40,19 @@ select_keys = function(map, keys, invert=FALSE){
 
 flatten_keys = function(map, keys){
 
-    # Return list of non-overlapping keys with length(values) = 1
-    # e.g. flat_keys('Tcell') = c('Tcell', list of non-Tcells)
-    o = select_keys(map, keys, invert=T)
-    c(names, o[sapply(map[o], length) == 1])
+    # Given a map and a list of keys, this function returns:
+    # keys + all non-overlapping "base" keys (length = 1)
+    # Example:
+    # > anno = load_anno(key='name', value='ident')
+    # > good = c('Tcell', 'B', 'N', 'F_Fib', 'M')
+    # > flatten_keys(anno, good)
+    # > c('B', 'N', ..., 'E_Enterocytes', 'E_Tuft', ..., 'F_Glial')
+
+    unmapped = keys[! keys %in% names(map)]
+    if(length(unmapped) > 0){stop(unmapped)}
+    others = select_keys(map, keys, invert=TRUE)
+    others = others[sapply(map[others], length) == 1]
+    return(c(keys, others))
 }
 
 

@@ -1,7 +1,7 @@
 
-library(ggplot2)
-library(scales)
-library(grid)
+require(ggplot2)
+require(scales)
+require(grid)
 
 
 # Run fast PCA on a Seurat object
@@ -11,7 +11,7 @@ run_rpca = function(seur, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=
     # If data, this function will still update the Seurat object
     # If cells.use, you may want to rescale data with rescale=TRUE
     
-    library(rsvd)    
+    require(rsvd)    
 
     # Get data and subset
     if(is.null(data)){data = seur@scale.data}
@@ -24,7 +24,8 @@ run_rpca = function(seur, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=
         pca.obj = rpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
     } else {
         print(dim(data))
-        pca.obj = rrpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
+        #pca.obj = rrpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
+	pca.obj = rrpca(t(data), k=k)
     }
     seur@pca.obj = list(pca.obj)
     seur@pca.rot = data.frame(pca.obj$x)
@@ -99,7 +100,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
     print(paste0("Considering only the top ", n, " PCs. Supply max.pc if you wish to change"))
     cat(sprintf("Running initial PCA\n"))
     if(randomized){
-        library(rsvd)
+        require(rsvd)
         uu <- rsvd(as.matrix(dat), k=max.pc)
     }else{
         uu <- corpcor::fast.svd(dat, tol = 0)
@@ -116,7 +117,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
             if(verbose==TRUE) cat(paste(i," "))
             dat0 <- t(apply(dat, 1, sample, replace = FALSE))
             if(randomized){
-                library(rsvd)
+                require(rsvd)
                 uu0 <- rsvd(as.matrix(dat0), k=max.pc)
             }else{
                 uu0 <- corpcor::fast.svd(dat0, tol = 0)
@@ -124,9 +125,9 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
             dstat0[i, ] <- uu0$d[1:ndf]^2/sum(uu0$d[1:ndf]^2)
         }
     }else{
-        library(parallel)
-        library(foreach)
-        library(doParallel)
+        require(parallel)
+        require(foreach)
+        require(doParallel)
         cl<-makePSOCKcluster(n.cores, outfile="")
         registerDoParallel(cl, n.cores)
         chunksize = B/n.cores
@@ -139,7 +140,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
                 dat0 <- t(apply(dat, 1, sample, replace = FALSE))
                 
                 if(randomized){
-                    library(rsvd)
+                    require(rsvd)
                     uu0 <- rsvd(as.matrix(dat0), k=max.pc)
                 }else{
                     uu0 <- corpcor::fast.svd(dat0, tol = 0)
@@ -204,7 +205,7 @@ variance.explained.plot <- function(pca, show_n_pcs=6)
 # rebecca's significant PC test
 sig.pcs <- function(data, binarise.cutoff=0, center=T, scale=F, do.fast=F)
 {
-    library(BiRewire)
+    require(BiRewire)
     pc.data.binary=data
     pc.data.binary[pc.data.binary > binarise.cutoff]=1
     if(binarise.cutoff>0){pc.data.binary[pc.data.binary <= binarise.cutoff]=0}
@@ -248,7 +249,7 @@ downsample.pca <- function(data, pcs.use=0, num.genes=20, balanced=FALSE, p.thre
 downsample.pca.seurat <- function(seurat.obj, n.sig=10, max.per.pc=20)
 {
     info("Running jackstraw..")
-    library(jackstraw)
+    require(jackstraw)
     seurat.obj=jackStraw(seurat.obj,num.replicate = 200,do.print = TRUE) 
     jackStrawPlot(seurat.obj,PCs = 1:12)
     info("Calculating PC significance scores for each gene..")

@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# Copyright (c) 2016 10x Genomics, Inc. All rights reserved.
+#
+# =============================================================================
+# Setup Instructions
+# =============================================================================
+#
+# 1. Substitute <pe_name> below with name of your cluster's shared-memory
+#    parallel environment. If your cluster does not have a parallel environment,
+#    delete this line. However, all Martian jobs will run with only 1 thread.
+#
+# 2. Add any other necessary SGE arguments such as queue (-q) or account (-A).
+#    If your system requires a walltime (-l h_rt), 24 hours (24:00:00) is
+#    sufficient.  We recommend you do not remove any arguments below (other
+#    than -pe, if applicable) or Martian may not run properly.
+#
+# 3. Change filename of sge.template.example to sge.template.
+#
+# =============================================================================
+# Template
+# =============================================================================
+#
+#$ -N __MRO_JOB_NAME__
+#$ -q short
+#$ -P regevlab
+#$ -V
+#$ -pe smp __MRO_THREADS__
+#$ -binding linear:__MRO_THREADS__
+#$ -cwd
+#$ -o __MRO_STDOUT__
+#$ -e __MRO_STDERR__
+#$ -l h_vmem=__MRO_MEM_GB_PER_THREAD__G
+#$ -R y
+#$ -S "/usr/bin/env bash"
+
+__MRO_CMD__

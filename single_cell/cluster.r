@@ -1,33 +1,36 @@
-library(Seurat)
-library(proxy)
+require(Seurat)
+require(proxy)
 
 source('~/code/single_cell/parallel.r')
 
 cosine_dist = function(x){as.dist(1 - crossprod(x)/crossprod(t(matrix(sqrt(colSums(x**2))))))}
 
-run_graph_cluster = function(d, k=100,  method='infomap', weighted=FALSE, dist='cosine', do.fast=FALSE, out=NULL){
-    
-    library(cccd)
-    
-    print('Building kNN graph')
-    g = nng(d, k=k, method=dist, use.fnn=do.fast)
-    if(weighted == TRUE){    
-    
-	print('Calculating Jaccard similarity')
-        s = similarity(g, method='jaccard')
-    
-	print('Building weighted graph')
-        g = graph.adjacency(s, mode='undirected', weighted=T)
-    
+run_graph_cluster = function(data, k=100,  method='infomap', weighted=FALSE, dist='cosine', do.fast=FALSE, out=NULL, knn=NULL){
+
+    # Graph cluster rows of data
+    require(cccd)
+
+    if(is.null(knn)){
+        print('Building kNN graph')
+        knn = nng(data, k=k, method=dist, use.fnn=do.fast)
+        if(weighted == TRUE){    
+        
+	    print('Calculating Jaccard similarity')
+            s = similarity(knn, method='jaccard')
+            
+	    print('Building weighted graph')
+            knn = graph.adjacency(s, mode='undirected', weighted=T)
+        
+        }
     }
     if(method == 'louvain'){
         print('Louvain clustering')
-        m = cluster_louvain(as.undirected(g))
+        m = cluster_louvain(as.undirected(knn))
     }
 
     if(method == 'infomap'){
         print('Infomap clustering')
-        m = cluster_infomap(g)
+        m = cluster_infomap(knn)
     }
     
     # Write output
@@ -37,12 +40,14 @@ run_graph_cluster = function(d, k=100,  method='infomap', weighted=FALSE, dist='
     }
     
     # Return clusters
-    clusters = data.frame(x=m$membership, row.names=rownames(data), stringsAsFactors=F)
-    colnames(clusters) = c(paste0(method, '.k', k))
+    clusters = data.frame(x=as.character(m$membership), row.names=rownames(data), stringsAsFactors=F)
+    colnames(clusters) = c(paste0(method, '.', dist, '.k', k))
     return(clusters)
 }
 
 run_phenograph = function(data, k=50, dist='cosine', out=NULL){
+
+    # Phenograph cluster rows of data
     
     # Write data
     if(is.null(out)){
@@ -60,14 +65,15 @@ run_phenograph = function(data, k=50, dist='cosine', out=NULL){
     }
     
     # Return clusters
-    clusters = data.frame(x=clusters, row.names=rownames(data), stringsAsFactors=F)
-    colnames(clusters) = c(paste0('phenograph.k', k))
+    clusters = data.frame(x=as.character(clusters), row.names=rownames(data), stringsAsFactors=F)
+    colnames(clusters) = c(paste0('phenograph.', dist, '.k', k))
     return(clusters)
 }
 
 run_mcl = function(data, method='spearman'){
 
-    library(MCL)
+    # MCL cluster rows of data
+    require(MCL)
 	
     # Calculate similarity
     s = cor(data, method=method)
@@ -79,17 +85,25 @@ run_mcl = function(data, method='spearman'){
     return(m$Cluster)
 }
 
-run_density = function(data, dist='correlation'){
+run_density = function(data, dist='cosine'){
 
-    library(densityClust)    
-    d = cosine_dist(t(data))
+    # Density cluster rows of data
+    require(densityClust)    
+    if(dist == 'cosine'){
+        d = cosine_dist(t(data))
+    } else {
+        d = dist(data, method=dist)
+    }
     p = densityClust(d)
     q = findClusters(p)
-    return(q$clusters)
-    
+    clusters = data.frame(x=as.character(q$clusters), row.names=rownames(data), stringsAsFactors=F)
+    colnames(clusters) = c(paste('density.', dist, '.k', k))
+    return(clusters)
 }
 
-run_cluster = function(data, k, method='infomap', weighted=FALSE, n.cores=1, dist='correlation', do.fast=TRUE, prefix=NULL){
+run_cluster = function(data, k, method='infomap', weighted=FALSE, n.cores=1, dist='cosine', do.fast=TRUE, prefix=NULL, knn=NULL){
+
+    # Cluster rows of data
     
     g = run_parallel(
         foreach(i=k, .packages=c('cccd', 'MCL'), .export=c('run_graph_cluster', 'run_phenograph', 'run_mcl'), .combine=cbind) %dopar% {
@@ -103,7 +117,7 @@ run_cluster = function(data, k, method='infomap', weighted=FALSE, n.cores=1, dis
 	    
 	    # Get clusters
 	    if(method %in% c('infomap', 'louvain')){
-            	gi = run_graph_cluster(data, k=i, method=method, weighted=weighted, dist=dist, do.fast=do.fast, out=out)
+            	gi = run_graph_cluster(data, k=i, method=method, weighted=weighted, dist=dist, do.fast=do.fast, out=out, knn=knn)
 	    }
 	    if(method == 'phenograph'){
 	        gi = run_phenograph(data, k=i, dist=dist, out=out)

@@ -1,3 +1,7 @@
+require(data.table)
+source('~/code/single_cell/tpm.r')
+
+
 load_mast = function(){
     library(BiocGenerics, pos=length(search()))
     library(S4Vectors, pos=length(search()))
@@ -47,125 +51,212 @@ get_data = function(seur, data.use='tpm', tpm=NULL){
 }
 
 
-select_cells = function(seur, ident.1, ident.2=NULL, cells.use=NULL, max_cells=NULL){
+select_cells = function(covariates, cells.use=NULL, max_cells=NULL){
     
-    # Select cells from Seurat object by identity, cells.use, and max_cells
+    # Select cells from covariates matrix using cells.use and max_cells
+    cat('\nSelecting cells\n')
     
-    # Select cells by ident
-    cells.1 = na.omit(colnames(seur@data)[as.character(seur@ident) == as.character(ident.1)])
-    if(is.null(ident.2)){
-        cells.2 = na.omit(colnames(seur@data)[as.character(seur@ident) != as.character(ident.1)])
-    } else {
-        cells.2 = na.omit(colnames(seur@data)[as.character(seur@ident) == as.character(ident.2)])
-    }
+    # Remove cells with missing data
+    cells = rownames(covariates)[apply(covariates, 1, function(a) !any(is.na(a)))]
     
-    # Intersect with cells.use
+    # Intersect cells with cells.use
     if(!is.null(cells.use)){
-        cells.1 = intersect(cells.1, cells.use)
-        cells.2 = intersect(cells.2, cells.use)
+        cells = intersect(cells, cells.use)
     }
-
-    # Subsample by max_cells
+    
+    # Construct cell groups
+    j = sapply(covariates, function(a) !is.numeric(a))
+    groups = apply(covariates[cells,j,drop=F], 1, function(a) paste(a, collapse='.'))
+    cat('\n')
+    print(table(groups))
+    
+    # Select max_cells from each group
     if(!is.null(max_cells)){
-        cells.1 = sample(cells.1, min(max_cells, length(cells.1)))
-        cells.2 = sample(cells.2, min(max_cells, length(cells.2)))
+        cells = unlist(tapply(cells, groups, function(a) sample(a, min(max_cells, length(a)))))
+	groups = apply(covariates[cells,j,drop=F], 1, function(a) paste(a, collapse='.'))
+	cat('\n')
+	print(table(groups))
     }
-    
-    return(list(cells.1=cells.1, cells.2=cells.2))
+    return(cells)
 }
 
 
-select_genes = function(seur, cells.1, cells.2, tpm=NULL, data=NULL, genes.use=NULL, min_cells=3, min_pct=.05, fc.use='tpm', min_fc=1.25, dir='both'){
+select_genes = function(seur, stats, genes.use=NULL, min_cells=3, min_alpha=.025, min_fc=1.2, dir='both'){
 
-    # Select genes from Seurat object by cells.1, cells.2, genes.use, min_cells, min_pct, and min_fc
-    # fc.use = 'tpm' or 'data' (for the latter, 'data' must be supplied)
+    # Select genes from Seurat object by cells, genes.use, min_cells, min_alpha, and min_fc
 
-    # Intersect genes with genes.use
+    # Select genes by genes.use
     if(is.null(genes.use)){genes.use = rownames(seur@data)}
-    genes.use = intersect(genes.use, rownames(seur@data))
-
-    # Calculate number of cells
-    ncells.1 = rowSums(seur@raw.data[genes.use, cells.1, drop=F] > 0)
-    ncells.2 = rowSums(seur@raw.data[genes.use, cells.2, drop=F] > 0)
-
+    
     # Select genes by min_cells
-    i1 = (ncells.1 >= min_cells) | (ncells.2 >= min_cells)
+    g1 = as.character(stats[, (max(n) >= min_cells) | (max(ref_n) >= min_cells), .(gene)][V1 == TRUE, gene])
+
+    # Select genes by min_alpha
+    g2 = as.character(stats[, (max(alpha) >= min_alpha) | (max(ref_alpha) >= min_alpha), .(gene)][V1 == TRUE, gene])
     
-    # Select genes by min_pct
-    i2 = (ncells.1/length(cells.1) >= min_pct) | (ncells.2/length(cells.2) >= min_pct)
-    
-    # Calculate log fold change
-    genes.use = genes.use[i1 & i2]
-    if(fc.use == 'tpm'){
-        u = rowMeans(tpm[genes.use, cells.1, drop=F])
-	v = rowMeans(tpm[genes.use, cells.2, drop=F])
-	logfc = log2(u + 1) - log2(v + 1)
-    } else if(fc.use == 'data') {
-        u = rowMeans(data[genes.use, cells.1, drop=F])
-	v = rowMeans(data[genes.use, cells.2, drop=F])
-	logfc = log2(u - min(u) + 1) - log2(v - min(v) + 1)
-    } else {
-        stop('Invalid argument: fc.use not in [tpm, data]')
-    }
-    
-    # Select by log fold change
-    if(min_fc < 1){stop('Invalid argument: min_fc < 1')}
+    # Select genes by min_fc
     if(dir == 'pos'){
-        i3 = logfc >= log2(min_fc)
-    } else if(dir == 'neg'){
-        i3 = logfc <= -1*log2(min_fc)
-    } else if(dir == 'both'){
-        i3 = abs(logfc) >= log2(min_fc)
+        g3 = as.character(stats[, max(log2fc) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
     } else {
-        stop('Invalid argument: dir not in [pos, neg, both]')
+        g3 = as.character(stats[, max(abs(log2fc)) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
     }
-    genes.use = genes.use[i3]
-    
-    return(list(genes.use=genes.use, logfc=logfc))    
+
+    # Intersect and return genes.use
+    genes.use = Reduce(intersect, list(genes.use, g1, g2, g3))
+    return(genes.use)
 }
 
 
-p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-	                  fc.use='tpm', tpm=NULL, covariates=NULL, formula='~ label', lrt_regex='label', gsea.boot=100, n.cores=1){
+expression_stats = function(tpm, covariates, formula, lrt_regex, cells.use=NULL, invert_method='multi', invert_logic='last'){
+    
+    # Calculate expression statistics for groups specified by formula
+    # each column of the model matrix is either a single term A or an interaction term A:B
+    # if single term, then select cells A and ~A
+    # if interaction, then select cells A:B and A:~B
+    # for multi-level factors, ~A is the next highest level of A
+    source('~/code/util/mm_utils.r')
     
     # Select cells
-    cells = select_cells(seur, ident.1, ident.2=ident.2, cells.use=cells.use, max_cells=max_cells)
-    cells.1 = cells$cells.1
-    cells.2 = cells$cells.2
-    cells.use = c(cells.1, cells.2)
+    total = rowSums(tpm)
+    if(!is.null(cells.use)){
+        tpm = tpm[,cells.use]
+	covariates = covariates[cells.use,,drop=F]
+    }
     
-    # Fix variables
-    if(length(cells.1) <= 5 | length(cells.2) <= 5){return(c())}
-    if(is.null(ident.2)){ident.2 = 'other'}
+    # Model matrix
+    print('Model matrix')
+    mm = as.matrix(model.matrix(as.formula(formula), data=covariates))
+    
+    # Invert matrix
+    print('Invert matrix')
+    u = mm_logical_not(mm, formula, covariates, method=invert_method, invert=invert_logic)
+    MM = u$x
+    refs = structure(u$names, names=colnames(MM))
+    
+    # For every column that matches lrt_regex
+    print('Expression stats')
+    stats = lapply(grep(lrt_regex, colnames(mm), value=T), function(a){
+        
+	# Select cells in each group
+	i = as.logical(mm[,a])
+	j = as.logical(MM[,a])
+	ref = refs[[a]]
+	
+	# Gene expression statistics
+	n1 = rowSums(tpm[,i] > 0); n2 = rowSums(tpm[,j] > 0)
+	s1 = rowSums(tpm[,i]); s2 = rowSums(tpm[,j])
+	a1 = n1/sum(i); a2 = n2/sum(j)
+	m1 = s1/n1; m2 = s2/n2
+	u1 = s1/sum(i); u2 = s2/sum(j)
+	t1 = s1/total; t2 = s2/total
+	zero = min(min(u1[u1 > 0]), min(u2[u2 > 0]))
+	log2fc = log2(u1 + .5*zero) - log2(u2 + .5*zero)
+	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=m1, ref_mu=m2, mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc)
+	return(res)
+    })
+    stats = as.data.table(do.call(rbind, stats))
+    return(stats)
+}
+
+
+fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells.use=NULL, invert_method='multi', invert_logic='last'){
+
+    # Calculate FDR statistics for groups specified by formula
+    # See mm_utils for information on mm_logical_not arguments
+    source('~/code/util/mm_utils.r')
+
+    # Select genes
+    if(is.null(genes.use)){genes.use = rownames(data)}
+    if(is.null(cells.use)){cells.use = colnames(data)}
+    data = data[genes.use, cells.use]
+    covariates = covariates[cells.use,,drop=F]
+    
+    # Model matrix
+    mm = as.matrix(model.matrix(as.formula(formula), data=covariates))
+    
+    # Invert matrix
+    u = mm_logical_not(mm, formula, covariates, method=invert_method, invert=invert_logic)
+    MM = u$x
+    refs = structure(u$names, names=colnames(MM))
+    
+    # For every column that matches lrt_regex
+    stats = lapply(grep(lrt_regex, colnames(mm), value=T), function(a){
+    
+	# Select cells in each group
+	i = as.logical(mm[,a])
+	j = as.logical(MM[,a])
+	ref = refs[[a]]
+	
+	# False discovery rate
+	fdr = t(apply(data, 1, function(b){
+	    predictions = b[i|j]
+	    labels = ifelse(i, TRUE, NA)
+	    labels[j] = FALSE
+	    labels = na.omit(labels)
+	    calc_fdr(predictions, factor(labels, levels=c(FALSE, TRUE)))
+ 	}))
+	colnames(fdr) = c('cutoff', 'accuracy', 'sensitivity', 'specificity', 'fdr', 'f1')
+	fdr = data.frame(gene=rownames(data), contrast=a, ref=ref, fdr)
+	return(fdr)
+    })
+    stats = as.data.table(do.call(rbind, stats))
+    return(stats)
+}
+
+
+p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000, dir='pos',
+	                  tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='multi', invert_logic='last', do.stats=FALSE, n.cores=1){
+    
+    # Build covariates
+    if(!is.null(ident.1)){
+        ident.use = seur@ident
+	if(is.null(ident.2)){
+	    ident.use = as.factor(ifelse(ident.use == ident.1, ident.1, 'Other'))
+	    ident.use = relevel(ident.use, 'Other')
+	} else {
+	    ident.use = as.factor(ifelse(ident.use %in% c(ident.1, ident.2), ident.use, NA))
+	    ident.use = relevel(ident.use, ident.2)
+	}
+	if(is.null(covariates)){
+	    covariates = data.frame(ident=ident.use)
+	} else {
+	    covariates$ident = ident.use
+	}
+    }
+    rownames(covariates) = colnames(seur@data)
+    
+    # Select cells
+    cells.use = select_cells(covariates, cells.use=cells.use, max_cells=max_cells)
     
     # TPM for log fold changes
-    if(fc.use == 'tpm'){tpm = get_data(seur, data.use='tpm', tpm=tpm)}
+    tpm = get_data(seur, data.use='tpm', tpm=tpm)
     
     # Data for DE test
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
-    # Cell identities
-    labels = factor(c(rep(ident.1, length(cells.1)), rep(ident.2, length(cells.2))), levels=c(ident.2, ident.1))
+    # Expression stats
+    stats = expression_stats(tpm, covariates, formula, lrt_regex, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
     
     # Select genes
-    genes = select_genes(seur, cells.1, cells.2, tpm=tpm, data=data, genes.use=genes.use, min_cells=min_cells, min_pct=min_pct, fc.use=fc.use, min_fc=min_fc, dir=dir)
-    genes.use = genes$genes.use
+    genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
     if(length(genes.use) <= 1){return(c())}
+    
+    # FDR stats
+    if(do.stats == TRUE){
+        fdr = fdr_stats(data, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
+	setkey(stats, gene, contrast, ref)
+	setkey(fdr, gene, contrast, ref)
+	stats = stats[fdr,]
+    }
     
     # Subset data
     print(paste('Testing', length(genes.use), 'genes in', length(cells.use), 'cells'))
     data = data[genes.use, cells.use, drop=F]
-
-    # Build covariates
-    if(is.null(covariates)){
-        covariates = data.frame(label=labels)
-	rownames(covariates) = cells.use
-    } else {
-        covariates = covariates[cells.use,]
-	covariates$label = labels
-    }
+    covariates = covariates[cells.use, , drop=F]
+    print(lapply(covariates, table))
     
     # Run marker tests
+    labels = covariates[,1]
     if(test.use == 'f'){markers = de.rocr(data, labels, measures='f')}
     if(test.use == 'fdr'){markers = de.fdr(data, labels)}
     if(test.use == 'pr'){markers = de.rocr(data, labels, measures=c('prec', 'rec'))}
@@ -174,19 +265,34 @@ p.find_markers = function(seur, ident.1, ident.2=NULL, data.use='log2', genes.us
     if(test.use == 'roc'){markers = de.rocr(data, labels, measures='auc')}
     
     # Add cluster information
-    markers$cluster = ident.1
-    markers$ref_cluster = ident.2
-
-    # Log fold change
-    markers$log2fc = genes$logfc[markers$gene]
+    if(! 'contrast' %in% colnames(markers)){
+        markers$contrast = paste0('ident', levels(labels)[nlevels(labels)])
+    }
+    
+    # Merge results
+    markers = as.data.table(markers)
+    setkey(stats, gene, contrast)
+    setkey(markers, gene, contrast)
+    markers = markers[stats,]
+    
+    # Sort markers
+    if('auc' %in% colnames(markers)){
+        markers = markers[order(contrast, -1*auc),]
+    } else if('f1' %in% colnames(markers)){
+        markers = markers[order(contrast, -1*f1),]
+    } else if('pval' %in% colnames(markers)){
+        markers = markers[order(contrast, pval),]
+    } else {
+        markers = markers[order(contrast, -1*alpha),]
+    }
     
     # Return marker genes
     return(markers)
 }
 
 
-p.find_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-		              fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
+p.find_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ...){
+    
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
@@ -195,24 +301,20 @@ p.find_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.use=N
     
     # Pre-calculate data
     data = get_data(seur, data.use=data.use, tpm=tpm)
-    
-    # Get functions to export
-    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'gsea.mast', 'format_mast_output')
     
     # Find marker genes
     run_parallel(
-        foreach(i=idents, .export=export, .combine=rbind) %dopar% {
+	foreach(i=idents, .combine=rbind) %dopar% {
 	    print(i)
-	    m = p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)
-	    return(m)
+	    p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data, n.cores=1, ...)
 	},
 	n.cores = n.cores
     )
 }
 
 
-p.pairwise_markers = function(seur, ident.1, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-		              fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
+p.pairwise_markers = function(seur, ident.1, data.use='log2', tpm=NULL, n.cores=1, ...){
+    
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
@@ -222,24 +324,19 @@ p.pairwise_markers = function(seur, ident.1, data.use='log2', genes.use=NULL, ce
     # Pre-calculate data
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
-    # Get functions to export
-    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'gsea.mast', 'format_mast_output')
-    
     # Find marker genes
     m = run_parallel(
-        foreach(i=setdiff(idents, ident.1), .export=export, .combine=rbind) %dopar% {
-	    print(c(ident.1, i))
-	    m = p.find_markers(seur, ident.1=ident.1, ident.2=i, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)
-	    if(!is.null(m)){m$ref_cluster = i}
-	    return(m)
+        foreach(i=setdiff(idents, ident.1), .combine=rbind) %dopar% {
+	    print(i)
+	    p.find_markers(seur, ident.1=ident.1, ident.2=i, tpm=tpm, data.use=data, n.cores=1, ...)
 	},
 	n.cores = n.cores
     )
 }
 
 
-p.pairwise_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_pct=.05, min_fc=1.25, max_cells=1000, dir='pos',
-		              fc.use='tpm', tpm=NULL, covariates=NULL, formula=NULL, lrt_regex='label', gsea.boot=100, n.cores=1){
+p.pairwise_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ...){
+    library(pryr)
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
@@ -249,16 +346,11 @@ p.pairwise_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.u
     # Pre-calculate data
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
-    # Get functions to export
-    export = c('p.find_markers', 'get_data', 'select_cells', 'select_genes', 'calc_rocr', 'de.rocr', 'calc_fdr', 'de.fdr', 'de.mast', 'gsea.mast', 'format_mast_output')
-    
     # Find marker genes
     m = run_parallel(
-        foreach(i=idents, .combine=rbind) %:% foreach(j=setdiff(idents, i), .export=export, .combine=rbind) %dopar% {
+        foreach(i=idents, .combine=rbind) %:% foreach(j=setdiff(idents, i), .combine=rbind) %dopar% {
 	    print(c(i,j))
-	    m = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, cells.use=cells.use, test.use=test.use, min_cells=min_cells, min_pct=min_pct, min_fc=min_fc, max_cells=max_cells, dir=dir, fc.use=fc.use, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)
-	    if(!is.null(m)){m$ref_cluster = j}
-	    return(m)
+	    p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, n.cores=1, dir='pos', ...)
 	},
 	n.cores = n.cores
     )
@@ -268,7 +360,7 @@ p.pairwise_all_markers = function(seur, data.use='log2', genes.use=NULL, cells.u
 merge_markers = function(fns=NULL, path='.', pattern=NULL, order_by=NULL, cluster_regex=NULL, ref_regex=NULL){
 
     # Combine markers with option to extract cluster names with regex
-    library(data.table)
+    require(data.table)
     
     # Read files
     if(is.null(fns)){
@@ -296,7 +388,7 @@ collapse_markers = function(m, group_by=list(cluster, gene), collapse_by=which.m
     # Collapse pairwise marker list
     # Uses non-standard evaluation (see default arguments)
     
-    library(data.table)
+    require(data.table)
     group_by = substitute(group_by)
     collapse_by = substitute(collapse_by)
     
@@ -306,7 +398,7 @@ collapse_markers = function(m, group_by=list(cluster, gene), collapse_by=which.m
 
 
 calc_rocr = function(predictions, labels, measures='auc', retx=FALSE){
-    library(ROCR)
+    require(ROCR)
     
     if(length(measures) == 1){
         q = performance(prediction(predictions, labels, label.ordering=levels(labels)), measures)
@@ -417,7 +509,7 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     res = res[order(res$contrast, res$pval),]
     
     options(mc.cores=1)
-    return(res)
+    return(as.data.table(res))
 }
 
 
@@ -492,9 +584,9 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
 
 plot_markers = function(markers, top=25, dir='pos', cols=1, base_size=12, regex=NULL, rm_regex=NULL){
     
-    library(ggplot2)
-    library(tidyr)
-    library(naturalsort)
+    require(ggplot2)
+    require(tidyr)
+    require(naturalsort)
 	     
     single_plot = function(m, cluster='cluster', gene='gene', value='auc', palette='OrRd', rm_regex=NULL){
 
@@ -569,7 +661,7 @@ plot_markers = function(markers, top=25, dir='pos', cols=1, base_size=12, regex=
 
 go_genes = function(seur, genes, ontology='BP'){
 
-    library(topGO)
+    require(topGO)
     all_genes = rownames(seur@data)
     GO2genes = readMappings(file='~/aviv/db/gopca/go.test.txt', sep='\t')
     gene_list = as.numeric(all_genes %in% genes)
@@ -587,8 +679,8 @@ go_genes = function(seur, genes, ontology='BP'){
 
 go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1){
 
-    library(topGO)
-    library(naturalsort)
+    require(topGO)
+    require(naturalsort)
     GO2genes = readMappings(file='~/aviv/db/gopca/go.test.txt', sep='\t')
     
     # Ontology can be: BP (biological process), MF (molecular function), or CC (cellular component)
@@ -650,8 +742,7 @@ update_signatures = function(seur){
     # Calculate signatures
     seur@data.info = cbind(seur@data.info, get_scores(seur, file='cell_cycle'))
     seur@data.info = cbind(seur@data.info, get_scores(seur, file='early'))
-    seur@data.info$nGene = colSums(seur@raw.data > 0)
-    seur@data.info$nUMI = colSums(seur@raw.data)
+    seur@data.info$nGene = colSums(seur@data > 0)
     
     return(seur)
 }

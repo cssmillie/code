@@ -4,7 +4,7 @@
 
 msg(name, 'Subsampling cells for PCA', verbose)
 ident = seur@data.info$orig.ident
-cells.use = as.character(unlist(tapply(colnames(seur@raw.data), list(ident), function(a){sample(a, min(length(a), maxc))})))
+cells.use = as.character(unlist(tapply(colnames(seur@data), list(ident), function(a){sample(a, min(length(a), maxc))})))
 msg(name, sprintf('Selected %d total cells', length(cells.use)))
 
 msg(name, 'Subsampled PCA', verbose)

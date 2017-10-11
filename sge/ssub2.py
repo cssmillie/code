@@ -322,25 +322,19 @@ class Submitter():
         
         # single tasks
         for task in self.tasks:
-            if not task.check_infiles():
+            if task.check_outfiles():
+                task.status = 'finished'
+            elif not task.check_infiles():
                 task.status = 'waiting'
             elif not task.uid:
                 task.status = 'ready'
             elif task.uid in self.get_running_uids():
                 task.status = 'running'
-            elif not task.check_outfiles():
-                if task.n <= self.r:
-                    task.status = 'retry'
-                else:
-                    task.status = 'failed'
+            elif task.n <= self.r:
+                task.status = 'retry'
             else:
-                task.status = 'finished'        
+                task.status = 'failed'
         
-        # pipelines
-        for task in self.tasks:
-            if not task.check_intasks():
-                task.status = 'waiting'
-    
     
     def group_tasks_by_status(self, tasks):
         # split tasks into status groups

@@ -13,6 +13,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data', help='Data folder (demultiplex output)')
 parser.add_argument('--regex', help='Regex to build sample names')
 parser.add_argument('--join', help='String to join groups with', default='')
+parser.add_argument('--cells', help='Number of expected cells', default=None, type=int)
 args = parser.parse_args()
 
 # Get forward and reverse reads
@@ -25,4 +26,7 @@ for i in range(len(fwd)):
     ri = os.path.abspath(rev[i])
     assert re.sub('R1', '', fi) == re.sub('R2', '', ri)
     name = args.join.join(re.search(args.regex, fi).groups())
-    print '%s\t%s\t%s' %(name, fi, ri)
+    if args.cells:
+        print '%s\t%s\t%s\t%s' %(name, fi, ri, args.cells)
+    else:
+        print '%s\t%s\t%s' %(name, fi, ri)

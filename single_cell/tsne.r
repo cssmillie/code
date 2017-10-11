@@ -1,15 +1,48 @@
 
 
-project_tsne = function(pca.rot.new, pca.rot.old, tsne.rot.old, perplexity, n.cores=1){
+run_largevis = function(data, k, save_knn=FALSE, save_weights=FALSE, dist.use='euclidean', verbose=TRUE, max_iter=1){
+    require(igraph)
+    require(largeVis)
 
+    # Run largeVis on data with k nearest neighbors
+    # save_knn saves the sparse knn graph
+    # save_weights saves the sparse knn distance matrix
+
+    # capitalize distance metric
+    dist.use = paste(toupper(substr(dist.use, 1, 1)), substr(dist.use, 2, nchar(dist.use)), sep="")
+
+    # run largevis
+    res = largeVis(data, K=k, save_neighbors=save_knn, save_edges=save_weights, distance_method=dist.use, verbose=verbose, max_iter=max_iter)
+
+    # construct output object
+    out = list(coords=t(res$coords))
+    if(save_knn == TRUE){
+        # sparse KNN matrix -> KNN graph
+        knn = res$knn
+	knn = neighborsToVectors(t(knn))
+	knn = graph_from_edgelist(as.matrix(data.frame(i=knn$i+1, j=knn$j+1)))
+	out$knn = knn
+    }
+    if(save_weights == TRUE){
+        # may need to convert to sparse matrix
+	# e.g. sparseMatrix(i=, j=, x)
+        out$weights = res$edges
+    }
+    return(out)
+}
+
+project_tsne = function(pca.rot.new, pca.rot.old, tsne.rot.old, perplexity, n.cores=1){
     source('~/code/single_cell/parallel.r')
 
-    sum_X_old = rowSums(pca.rot.old^2)
-    
+    # Project new data onto old TSNE space
+    sum_x_old = rowSums(pca.rot.old^2)
+
+    # Get new TSNE rotations
     tsne.rot.new = run_parallel(foreach(i=rownames(pca.rot.new), .combine=cbind, .export=c('project_map', 'd2p_cell', 'KullbackFun', 'Hbeta')) %dopar% {
-        project_map(pca.rot.new[i,], pca.rot.old, sum_X_old, tsne.rot.old)
+        project_map(pca.rot.new[i,], pca.rot.old, sum_x_old, tsne.rot.old)
     }, n.cores=n.cores)
 
+    # Return [cells x TSNE axes] rotations
     colnames(tsne.rot.new) = rownames(pca.rot.new)
     return(as.data.frame(t(tsne.rot.new)))
 }

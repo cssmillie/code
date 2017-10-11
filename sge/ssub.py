@@ -94,7 +94,7 @@ def parse_args():
     if __name__ == '__main__':
         
         # add command line arguments
-        parser = argparse.ArgumentParser(usage = usage)
+        parser = argparse.ArgumentParser()
         parser.add_argument('-q', default='short', help='queue')
         parser.add_argument('-m', default=0, type=int, help='memory (gb)')
         parser.add_argument('-o', default='run', help='output prefix', required=True)
@@ -253,20 +253,21 @@ class Submitter():
     
     def submit(self, commands):
         # submit a job array to the cluster
-        print '\nSubmitting jobs:'
-        print '\t' + '\n\t'.join(commands)
         if len(commands) == 0:
             return []
         if type(commands) == str:
             commands = [commands]
+        print '\nSubmitting jobs:'
+        print '\t' + '\n\t'.join(commands)
         if self.p == False:
             if self.d == False:
                 array_fn, error_fn = self.write_array(commands)
+                job_ids = self.qsub([array_fn])
+                self.write_error(error_fn, commands, job_ids)
             else:
                 assert len(commands) == 1
                 array_fn = commands[0]
-            job_ids = self.qsub([array_fn])
-            self.write_error(error_fn, commands, job_ids)
+                job_ids = self.qsub([array_fn])
             return job_ids
         elif self.p == True:
             print('\n'.join(commands))

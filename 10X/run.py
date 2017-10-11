@@ -2,45 +2,57 @@ import argparse, os, re, ssub
 
 steps = 'demux cellranger cp dge tsne'.split()
 
-# Get input arguments
+
+# ---------------
+# Input arguments
+# ---------------
+
 parser = argparse.ArgumentParser()
-parser.add_argument('--folder', help='data directory', required=True)
-parser.add_argument('--barcodes', help='sample -> barcodes (tsv)', required=True)
-parser.add_argument('--human', help='human?', action='store_true', default=False)
-parser.add_argument('--mouse', help='mouse?', action='store_true', default=False)
-parser.add_argument('--version', help='cellranger version', default='1.3.1', choices=['1.1.0', '1.3.1'])
-parser.add_argument('--enter' ,help='enter pipeline at step', default='demux', choices=steps)
-parser.add_argument('--exit', help='exit pipeline at step', default='tsne', choices=steps)
+parser.add_argument('--folder', help='Illumina BCL run folder', default='')
+parser.add_argument('--serial', help='Flowcell serial number', default='')
+parser.add_argument('--fastq', help='FASTQ folder', default='')
+parser.add_argument('--csv', help='CellRanger csv file (Lane, Sample, Index)', required=True)
+parser.add_argument('--host', help='Host organism', default='human', choices=['hg19', 'mm10', 'hg19_and_mm10'])
+parser.add_argument('--version', help='CellRanger version', default='2.0.0', choices=['1.1.0', '1.3.1', '2.0.0'])
+parser.add_argument('--enter' ,help='Enter pipeline at step', default='demux', choices=steps)
+parser.add_argument('--exit', help='Exit pipeline at step', default='tsne', choices=steps)
 parser.add_argument('-m', help='Memory (default=32)', type=int, default=32)
-parser.add_argument('-p', help='print out commands?', default=False, action='store_true')
+parser.add_argument('-p', help='Print out commands?', default=False, action='store_true')
+parser.add_argument('-w', help='Write scripts and exit', default=False, action='store_true')
 args = parser.parse_args()
+
+
+# --------------------
+# Initialize variables
+# --------------------
 
 # Make output folder
 if not os.path.exists('outs'):
     os.mkdir('outs')
 
-# Get reference genome
-if args.human:
-    host = 'hg19'
-elif args.mouse:
-    host = 'mm10'
-else:
-    quit('Must specify human or mouse')
-ref = '/seq/regev_genome_portal/SOFTWARE/10X/refdata-cellranger-1.2.0/refdata-cellranger-%s-1.2.0' %(host)
-sigdb = '/home/unix/csmillie/db/immgen.%s.db.txt' %(host)
+ref = '/home/unix/csmillie/Gut_Human/csmillie/gtf/%s' %(args.host)
+sigdb = '/home/unix/csmillie/db/immgen.%s.db.txt' %(args.host)
 
 # Get flowcell from RunInfo file
-run_info = os.path.join(args.folder, 'RunInfo.xml')
-run_info = '\n'.join(open(run_info).readlines())
-serial = re.search('<Flowcell>(.*?)</Flowcell>', run_info).group(1)
+try:
+    run_info = os.path.join(args.folder, 'RunInfo.xml')
+    run_info = '\n'.join(open(run_info).readlines())
+    serial = re.search('<Flowcell>(.*?)</Flowcell>', run_info).group(1)
+except:
+    serial = args.serial
+if not serial:
+    quit('No flowcell serial')
 
 # Extract sample index from filename
 print 'Predicted serial: %s' %(serial)
-fastq_path = './%s/outs/fastq_path/' %(serial)
+if not args.fastq:
+    fastq_path = './%s/outs/fastq_path/' %(serial)
+else:
+    fastq_path = args.fastq
 print 'Predicted FASTQ path: %s' %(fastq_path)
 
 # Get sample names
-samples = [line.rstrip().split()[0] for line in open(args.barcodes)]
+samples = [line.rstrip().split(',')[1] for line in open(args.csv) if not line.startswith('Lane')]
 
 def check_step(name):
     if steps.index(args.enter) <= steps.index(name) and steps.index(args.exit) >= steps.index(name):
@@ -48,23 +60,39 @@ def check_step(name):
 
 pipeline = []
 
+
+# -----------
 # Demultiplex
-if not os.path.exists('/home/unix/csmillie/code/10X/wrap_10x_demux.sh'):
-    quit('Error: could not find /home/unix/csmillie/code/10X/wrap_10x_demux.sh')
-cmd1 = "cat /home/unix/csmillie/code/10X/wrap_10x_demux.sh | sed -e 's INDIR %s ' -e 's VERSION %s ' > ./demux.sh" %(args.folder, args.version)
+# -----------
+
+demux_fn = '/home/unix/csmillie/code/10X/wrap_10x_demux.sh'
+if not os.path.exists(demux_fn):
+    quit('Error: could not find %s' %(demux_fn))
+cmd1 = "cat %s | sed -e 's INDIR %s ' -e 's CSV %s ' -e 's VERSION %s ' > ./demux.sh" %(demux_fn, args.folder, args.csv, args.version)
 os.system(cmd1)
 if check_step('demux'):
     pipeline.append(['sh ./demux.sh'])
 
+
+# -----------
 # Cell Ranger
-cmd2 = "cat /home/unix/csmillie/code/10X/wrap_10x_run_parallel.sh | sed -e 's BARCODES %s ' -e 's REF %s ' -e 's FQPATH %s ' -e 's VERSION %s ' > ./run10x.sh" %(args.barcodes, ref, fastq_path, args.version)
-if not os.path.exists('/home/unix/csmillie/code/10X/wrap_10x_run_parallel.sh'):
-    quit('Error: could not find /home/unix/csmillie/code/10X/wrap_10x_run_parallel.sh')
+# -----------
+
+run10x_fn = '/home/unix/csmillie/code/10X/wrap_10x_run_parallel.sh'
+cmd2 = "cat %s | sed -e 's CSV %s ' -e 's REF %s ' -e 's SERIAL %s ' -e 's VERSION %s ' -e 's NUM %s ' -e 's FASTQ_PATH %s ' > ./run10x.sh" %(run10x_fn, args.csv, ref, serial, args.version, len(samples), fastq_path)
+if not os.path.exists(run10x_fn):
+    quit('Error: could not find %s' %(run10x_fn))
 os.system(cmd2)
 if check_step('cellranger'):
     pipeline.append(['sh ./run10x.sh'])
 
-# Copy Cell Ranger output
+if args.w:
+    quit()
+
+# -----------------
+# Copy output files
+# -----------------
+
 if check_step('cp'):
     cmds = []
     if not os.path.exists('./outs/CellRanger'):
@@ -81,19 +109,22 @@ if check_step('cp'):
         cmds.append('%s; %s; %s; %s' %(cmdi, cmdj, cmdk, cmdl))
     pipeline.append(cmds)
     pipeline.append(['tar -cvzf ./outs/CellRanger.tgz --remove-files -C ./outs ./CellRanger'])
-    
 
+
+# --------------
 # Construct DGEs
+# --------------
+
 if check_step('dge'):
     
     # DGE for individual samples
     cmds = []
     if not os.path.exists('./outs/DGE'):
         os.mkdir('./outs/DGE')
-    samples = [line.rstrip().split()[0] for line in open(args.barcodes)]
+    samples = [line.rstrip().split(',')[1] for line in open(args.csv) if not line.startswith('Lane')]
     for sample in samples:
-        folder = './%s/outs/filtered_gene_bc_matrices/%s' %(sample, host)
-        cmdi = 'Rscript /home/unix/csmillie/code/10X/make_counts.r %s %s ./outs/DGE/%s.dge.txt' %(folder, sample, sample)
+        folder = './%s/outs/filtered_gene_bc_matrices/%s' %(sample, args.host)
+        cmdi = 'Rscript /home/unix/csmillie/code/10X/make_counts.r --folder %s --prefix %s --out ./outs/DGE/%s.dge.txt' %(folder, sample, sample)
         cmdj = 'gzip ./outs/DGE/%s.dge.txt' %(sample)
         cmds.append('%s; %s' %(cmdi, cmdj))
     pipeline.append(cmds)
@@ -103,9 +134,13 @@ if check_step('dge'):
     for sample in samples:
         out.write('NA\t./outs/DGE/%s.dge.txt.gz\t.*\n' %(sample))
     out.close()
-    pipeline.append(['Rscript /home/unix/csmillie/code/merge_dges.r --map all.map.txt --ming 500 --out ./outs/DGE/all.dge.txt; gzip ./outs/DGE/all.dge.txt'])
+    pipeline.append(['Rscript /home/unix/csmillie/code/single_cell/merge_dges.r --map all.map.txt --ming 100 --out ./outs/DGE/all.dge.txt; gzip ./outs/DGE/all.dge.txt'])
     
+
+# --------------
 # Calculate TSNE
+# --------------
+
 if check_step('tsne'):
     cmds = []
     if not os.path.exists('./outs/Portal'):
@@ -115,7 +150,11 @@ if check_step('tsne'):
     cmds.append('Rscript /home/unix/csmillie/code/10X/do_seurat.r --name ./outs/Portal/all --dge ./outs/DGE/all.dge.txt.gz --ming 500 --sigdb %s --out' %(sigdb))
     pipeline.append(cmds)
 
+
+# ------------
 # Run pipeline
+# ------------
+
 for cmd in pipeline:
     print '\n'.join(cmd)
 

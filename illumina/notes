@@ -1,0 +1,32 @@
+
+Plate data
+----------
+
+Requirements:
+- bcl output directory
+- sample sheet
+
+1. Link to sequencing output, e.g.
+> ln -s /ahg/regev_nextseq/Data03/170721_NB501583_0195_AHNGNGBGX2
+
+2. Demultiplex using sample sheet
+python ~/code/illumina/demultiplex.py -i 170721_NB501583_0195_AHNGNGBGX2 -s samples.csv
+
+3. Generate samples.txt file
+This is a tab-delimited file (1 = cell ID, 2 = fq1, 3 = fq2)
+The ids should be *cells* not *samples*
+> python ~/code/illumina/get_samples.py --data Data --regex '^.*\/(.*?_plt\d+).*?(_S\d+)_' > samples.txt
+
+4. Create scripts on KCO
+http://kcoserver.broadinstitute.org:8088/
+- RNA-Seq Expression
+- rnaseq pipeline
+- path to samples.txt: /home/unix/csmillie/ens/data/0717_navin2_brain_colon/samples.txt
+- genome annotation: mm10
+- Trimmomatic = FALSE, Star = TRUE, RNASeq-QC = TRUE, RSEM=TRUE
+- path to output: /home/unix/csmillie/ens/data/0717_navin2_brain_colon
+
+5. Run scripts
+
+
+

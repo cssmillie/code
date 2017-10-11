@@ -1,5 +1,5 @@
-library(data.table)
-library(optparse)
+require(data.table)
+require(optparse)
 
 option_list = list(make_option('--name', help='name', default='test'),
 	           make_option('--dge', help='dge filename'),

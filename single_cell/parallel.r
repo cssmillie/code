@@ -1,4 +1,4 @@
-library(doParallel)
+require(doParallel)
 
 bg.run = function(f, name=''){
 
@@ -30,8 +30,8 @@ run_parallel = function(f, n.cores=1){
     if(n.cores > 1){    
         
         # Register cluster
-        cluster = makePSOCKcluster(n.cores, outfile='')
-        registerDoParallel(cluster, n.cores)
+	cluster = makeCluster(n.cores, type='FORK', outfile='')
+	registerDoParallel(cluster)
 	
         # Run f in parallel
     	y = f
