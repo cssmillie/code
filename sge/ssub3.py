@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import argparse, datetime, itertools, os, os.path, random, re, stat, subprocess, sys, tempfile, time
 
 
@@ -12,20 +13,19 @@ def parse_args():
     # add command line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', default=8, type=int, help='memory (gb)')
-    parser.add_argument('-q', default='short', help='queue')
+    parser.add_argument('-t', default=7200, help='time (sec)')
     parser.add_argument('-o', default='run', help='output prefix', required=True)
     parser.add_argument('-P', default='regevlab', help='project name')
     parser.add_argument('-H', default='', help='header lines')
     parser.add_argument('-u', default='', help='username')
-    parser.add_argument('-s', default='gold.broadinstitute.org', help='server')
+    parser.add_argument('-s', default='platinum.broadinstitute.org', help='server')
     parser.add_argument('-p', default=False, action='store_true', help='print commands')        
-    parser.add_argument('-d', default=False, action='store_true', help='direct submit')
     parser.add_argument('-w', default=600, type=float, help='pipeline wait time (sec)')
     parser.add_argument('-r', default=0, type=int, help='max retry')
-    parser.add_argument('-R', default=True, action='store_false', help='do not randomize users')
+    parser.add_argument('-R', default=True, action='store_false', help='no random users')
     parser.add_argument('-W', default=float('inf'), type=float, help='max inactivity (sec)')
     parser.add_argument('-g', default=False, action='store_true', help='group tasks')
-    parser.add_argument('-v', default=True, action='store_false', help='quiet')
+    parser.add_argument('-v', default=True, action='store_false', help='no verbose')
     parser.add_argument('commands', nargs='?', default='')
     
     if __name__ == '__main__':
@@ -36,27 +36,6 @@ def parse_args():
         args = parser.parse_args(['-o', 'test'])
     
     return args
-
-
-
-# ---------------
-# main subroutine
-# ---------------
-
-
-if __name__ == '__main__':
-
-    # initialize new task submitter
-    submitter = Submitter()
-
-    # add commands from stdin
-    for line in sys.stdin.readlines():
-        command = line.rstrip()
-        submitter.add_task(command)
-
-    # submit jobs
-    submitter.submit()
-
 
 
 # ------------------
@@ -93,7 +72,7 @@ def get_filename(prefix, suffix='txt', path='.'):
 class Task():
 
     
-    def __init__(self, command, inputs=[], outputs=[], m=[0], q=['short'], u=['']):
+    def __init__(self, command, inputs=[], outputs=[], m=[0], t=[7200], u=['']):
         
         # job tracking
         self.command = command
@@ -110,17 +89,17 @@ class Task():
         
         # current resources
         self.m = None # memory
-        self.q = None # queue
+        self.t = None # time
         self.u = None # username
         
         # list of resources
         fix_type = lambda x: x if type(x) == list else [x]
         self.M = fix_type(m)[:]
-        self.Q = fix_type(q)[:]
+        self.T = fix_type(t)[:]
         self.U = fix_type(u)[:]
-
+        
         # initialize resources
-        self = self.add_iter(job_id=None)
+        self = self.update_resources(job_id=None)
     
     
     def __repr__(self):
@@ -128,11 +107,11 @@ class Task():
         return '\n' + self.__class__.__name__ + '\n' + '\n'.join(['%s:'.ljust(10) %(k) + str(x[k]) for k in sorted(x)]) + '\n'
     
     
-    def add_iter(self, job_id=None):
+    def update_resources(self, job_id=None):
         self.job_id = job_id
         self.n += 1
         self.m = self.m if len(self.M) == 0 else self.M.pop(0)
-        self.q = self.q if len(self.Q) == 0 else self.Q.pop(0)
+        self.t = self.t if len(self.T) == 0 else self.T.pop(0)
         self.u = self.u if len(self.U) == 0 else self.U.pop(0)
         return self
     
@@ -152,7 +131,7 @@ class Task():
     
     
     def resources(self):
-        return '%s.%s.%s' %(self.u, self.q, self.m)
+        return '%s.%s.%s' %(self.u, self.t, self.m)
 
 
 
@@ -172,7 +151,7 @@ class Submitter():
         # submission parameters
         self.tasks = [] # tasks
         self.m = args.m # memory
-        self.q = args.q # queue
+        self.t = args.t # time
         self.o = args.o # output
         self.P = args.P # project
         self.H = args.H # header
@@ -189,12 +168,12 @@ class Submitter():
         
         # fix arguments
         self.m = map(int, str(self.m).split(','))
-        self.q = self.q.split(',')
+        self.t = str(self.t).split(',')
         self.u = self.u.split(',')
         
         # account setup
         self.me = 'csmillie'
-        self.users = ['', 'eugened', 'mbiton']
+        self.users = ['', 'eugened', 'mbiton', 'nrogel']
         
         # cluster parameters
         self.stat_cmd = 'qstat -g d -u %s | egrep -v "^job|^-"' %(','.join(self.users + [self.me]))
@@ -238,50 +217,67 @@ class Submitter():
         array = f('array')
         error = f('error')
         m = f('m')
-        q = f('q')
+        t = f('t')
         u = f('u')
-        t = ','.join(map(str, sorted([task.task_id for task in tasks])))        
+        task_ids = ','.join(map(str, sorted([task.task_id for task in tasks])))        
         
         # submit job
-        cmd = '%s -o %s -j y -l h_vmem=%sg -q %s -t %s -P %s %s' %(self.submit_cmd, error, m, q, t, self.P, array)
+        cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, task_ids, self.P, array)
         out = self.system(cmd, user=u)
         
         # update tasks
         job_id = self.parse_job(out)
         for task in tasks:
-            task.add_iter(job_id=job_id)
-        
+            task.update_resources(job_id=job_id)
+
         # write log
         self.write_log('Job %s: "%s" (u=%s)\n%s' %(job_id, cmd, u, '\n'.join(commands)))
         
     
-    def add_task(self, command='', inputs=[], outputs=[], m=None, q=None, u=None):
+    def add_task(self, command='', inputs=[], outputs=[], m=None, t=None, u=None):
         assert type(command) == str
         
         # use default resources
         m = self.m if m is None else m
-        q = self.q if q is None else q
+        t = self.t if t is None else t
         u = self.u if u is None else u
         
         # create and return task
-        task = Task(command, inputs=inputs, outputs=outputs, m=m, q=q, u=u)
+        task = Task(command, inputs=inputs, outputs=outputs, m=m, t=t, u=u)
         self.tasks.append(task)
     
     
-    def running_uids(self):
-        x = {}
+    def running_uids(self):        
+        uids = {}
         for line in self.qstat():
             line = line.rstrip().split()
+            
             if len(line) > 0:
-                uid = '%s;%s' %(line[0], line[-1])
-                x[uid] = 1
-        return x
+                
+                # get task info
+                job_id = line[0]
+                user = line[3]
+                state = line[4]
+                task_id = line[-1]
+                
+                # fix errors
+                if state == 'Eqw':
+                    cmd = 'qmod -cj %s' %(job_id)
+                    out = self.system(cmd, user=user)
+                
+                # add unique id
+                uid = '%s;%s' %(job_id, task_id)
+                uids[uid] = 1
+        
+        # running uids
+        return uids
     
     
     def update_tasks(self):
         # update task status with single qstat
+        running_uids = self.running_uids()
         for task in self.tasks:
-            if task.uid() in self.running_uids():
+            if task.uid() in running_uids:
                 task.status = 'running'
             elif task.check_outputs():
                 task.status = 'finished'
@@ -329,7 +325,7 @@ class Submitter():
         # write to log
         text = ', '.join(u) + '\n' + ', '.join(v)
         self.write_log(text)
-    
+        
     
     def submit(self, x=[], wait=True, out=None, group=None):
         
@@ -343,7 +339,8 @@ class Submitter():
             return []
         
         # initialize log
-        self.writer = Writer(prefix=self.o, path=self.o, verbose=self.v)
+        self.writer = Writer(prefix=self.o, path='error', verbose=self.v)
+        self.summarize_tasks()
         
         # write array
         array = self.writer.write_array(tasks=self.tasks, H=self.H)
@@ -360,7 +357,7 @@ class Submitter():
             
             # get 'ready' tasks
             tasks = self.group_tasks_by_status(self.tasks)['ready']
-
+            
             # split into resource groups
             if self.g == True:
                 groups = self.group_tasks_by_resources(tasks)
@@ -473,14 +470,14 @@ class Writer():
         
         # get filename
         if len(tasks) > 1:
-            error = get_filename(prefix='.'+prefix, suffix='err', path=self.path)
+            error = get_filename(prefix=prefix, suffix='err', path=self.path)
         else:
-            error = re.sub(r'^(.*\/)', r'\1.', re.sub('.sh$', '.%s.err' %(tasks[0].task_id), array))
+            error = re.sub('.sh$', '.%s.err' %(tasks[0].task_id), array)
         
         # error text
         text = ''
         for task in tasks:
-            text = 'Task %d: "%s" (m=%s, q=%s, u=%s)' %(task.task_id, task.command, task.m, task.q, task.m) + '\n'
+            text = 'Task %d: "%s" (m=%s, t=%s, u=%s)' %(task.task_id, task.command, task.m, task.t, task.u) + '\n'
         
         # write error
         with open(error, 'a') as fh:
@@ -507,3 +504,24 @@ class Writer():
         if self.verbose:
             print text,
         self.log.write(text)
+
+
+# ---------------
+# main subroutine
+# ---------------
+
+
+if __name__ == '__main__':
+
+    # initialize new task submitter
+    submitter = Submitter()
+
+    # add commands from stdin
+    for line in sys.stdin.readlines():
+        command = line.rstrip()
+        submitter.add_task(command)
+
+    # submit jobs
+    submitter.submit()
+
+
