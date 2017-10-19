@@ -125,7 +125,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     if(ncol(seur@data) <= stop_cells){return(seur)}
     
     msg(name, 'Selecting variable genes', verbose)
-    var_genes = get_var_genes(seur@raw.data, ident=seur@ident, method=varmet, min.cv2=min_cv2, num_genes=num_genes)
+    var_genes = get_var_genes(seur@raw.data, ident=seur@ident, method=varmet, num_genes=num_genes)
     msg(name, sprintf('Found %d variable genes', length(var_genes)), verbose)
     seur@var.genes = intersect(var_genes, rownames(seur@data))
     

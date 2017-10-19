@@ -208,13 +208,14 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
 	                  tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='multi', invert_logic='last', do.stats=FALSE, n.cores=1){
     
     # Build covariates
+    print(c(ident.1, ident.2))
     if(!is.null(ident.1)){
         ident.use = seur@ident
 	if(is.null(ident.2)){
 	    ident.use = as.factor(ifelse(ident.use == ident.1, ident.1, 'Other'))
 	    ident.use = relevel(ident.use, 'Other')
 	} else {
-	    ident.use = as.factor(ifelse(ident.use %in% c(ident.1, ident.2), ident.use, NA))
+	    ident.use = as.factor(ifelse(ident.use %in% c(ident.1, ident.2), as.character(ident.use), NA))
 	    ident.use = relevel(ident.use, ident.2)
 	}
 	if(is.null(covariates)){
@@ -224,6 +225,10 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
 	}
     }
     rownames(covariates) = colnames(seur@data)
+    
+    # Check covariates
+    q = sapply(covariates, typeof)
+    if('character' %in% q){print(q); stop('error: invalid covariates type')}
     
     # Select cells
     cells.use = select_cells(covariates, cells.use=cells.use, max_cells=max_cells)
@@ -273,7 +278,7 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     markers = as.data.table(markers)
     setkey(stats, gene, contrast)
     setkey(markers, gene, contrast)
-    markers = markers[stats,]
+    markers = markers[stats,,nomatch=0]
     
     # Sort markers
     if('auc' %in% colnames(markers)){
@@ -291,22 +296,22 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
 }
 
 
-p.find_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ...){
+p.find_all_markers = function(seur, data.use='log2', tpm=NULL, do.precalc=T, n.cores=1, ...){
     
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
-    # Pre-calculate TPM
-    tpm = get_data(seur, data.use='tpm', tpm=tpm)
-    
-    # Pre-calculate data
-    data = get_data(seur, data.use=data.use, tpm=tpm)
+    # Pre-calculate TPM and data
+    if(do.precalc == TRUE){
+        tpm = get_data(seur, data.use='tpm', tpm=tpm)
+        data.use = get_data(seur, data.use=data.use, tpm=tpm)
+    }
     
     # Find marker genes
     run_parallel(
 	foreach(i=idents, .combine=rbind) %dopar% {
 	    print(i)
-	    p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data, n.cores=1, ...)
+	    p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data.use, n.cores=1, ...)
 	},
 	n.cores = n.cores
     )
@@ -551,9 +556,9 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
     
     # Fit MAST hurdle model
     if(is.null(formula)){
-        formula = as.formula(paste('~' , paste(colnames(covariates), collapse=' + ')))
+        formula = paste('~' , paste(colnames(covariates), collapse=' + '))
     }
-    zlm.obj = zlm(formula, sca)
+    zlm.obj = zlm(as.formula(formula), sca)
     
     # Calculate bootstraps
     boot = bootVcov1(zlm.obj, gsea.boot)

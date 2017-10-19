@@ -5,6 +5,11 @@ dirichlet_regression = function(counts, covariates, formula){
     # formula is not quoted, example: counts ~ condition
     # counts is a [samples x cell types] matrix
     # covariates holds additional data to use in the regression
+    #
+    # Example:
+    # counts = do.call(cbind, tapply(seur@data.info$orig.ident, seur@ident, table))
+    # covariates = data.frame(condition=gsub('[12].*', '', rownames(counts)))
+    # res = dirichlet_regression(counts, covariates, counts ~ condition)
     
     require(DirichletReg)
     
@@ -24,3 +29,5 @@ dirichlet_regression = function(counts, covariates, formula){
     
     return(fit)
 }
+
+

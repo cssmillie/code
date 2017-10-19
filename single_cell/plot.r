@@ -26,7 +26,8 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
     
     # Get names
     if(length(names) > 0){
-        genes = names[sapply(names, function(a) all(a %in% rownames(data)))]
+        genes = sapply(names, function(a) unique(map_gene(a, target=predict_organism(rownames(data)[1:100]))))
+        genes = genes[sapply(genes, function(a) all(a %in% rownames(data)))]
 	feats = names[sapply(names, function(a) all(a %in% colnames(meta)))]
     }
 
@@ -70,8 +71,8 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
     if(length(genes) > 0){
     
         # Organism name
-	org = predict_organism(rownames(data)[1:100])
-	genes = lapply(genes, map_gene, target=org)
+	#org = predict_organism(rownames(data)[1:100])
+	#genes = lapply(genes, map_gene, target=org)
 	
 	# Select top genes
 	if(!is.null(top)){genes = lapply(genes, function(a){as.character(na.omit(a[1:top]))})}
@@ -205,13 +206,51 @@ plot_tsne = function(seur=NULL, scores=NULL, coords=NULL, ident=TRUE, cells.use=
 }
 
 
-plot_bars = function(data, pvals=NULL, xlab='Cell_Type', ylab='Frequency', group.by='Samples', palette='Set1'){
-    require(tidyverse)
-    data = gather_(as.data.frame(data) %>% rownames_to_column(group.by), xlab, ylab, setdiff(colnames(data), group.by))
-    p = ggplot(data, aes_string(x=xlab, y=ylab)) +
-        geom_bar(aes_string(fill=group.by), stat='identity', position='dodge') +
-	scale_fill_brewer(palette=palette)
+matrix_barplot = function(data, group.by=NULL, pvals=NULL, xlab='', ylab='Frequency', error='se', legend.title='Groups', palette='Paired', out=NULL){
+
+    # Plot barplot of [M x N] matrix
+    # x-axis = matrix columns (e.g. cell types)
+    # y-axis = matrix values (e.g. frequencies)
+    # fill = matrix rows (e.g. samples) or groups (e.g. conditions)
     
+    # Arguments:
+    # group.by = the group of each row
+    # pvals = named list of p-values for each column
+    # error = sd, se, or none
+    
+    require(tidyverse)
+    require(data.table)
+    require(ggsignif)
+
+    # By default, group by rows
+    if(is.null(group.by)){group.by = rownames(data)}
+
+    # Construct input data
+    data = data.frame(groups=group.by, data)
+    names = colnames(data)
+    data = as.data.table(gather_(data, 'x', 'y', setdiff(colnames(data), 'groups')))
+    
+    # Calculate group means, error bars
+    se = function(x){sd(x)/sqrt(length(x))}    
+    if(error == 'sd'){ef = sd} else if(error == 'se'){ef = se} else {ef = function(x){0}}
+    data = data[,.(u=mean(y), s=ef(y)),.(groups, x)]
+    data$x = factor(data$x, levels=names)
+
+    # P-values
+    pvals = as.data.frame(pvals) %>% rownames_to_column('x')
+    pvals$label = ifelse(pvals$pvals <= .001, '***', ifelse(pvals$pvals <= .01, '**', ifelse(pvals$pvals <= .05, '*', '')))
+    pvals$pos = -.02*max(data$u)
+    
+    # Plot data
+    p = ggplot(data) +
+    geom_bar(aes(x=x, y=u, fill=groups), stat='identity', position=position_dodge(.9)) +
+    geom_errorbar(aes(x=x, ymin=u-s, ymax=u+s, fill=groups), stat='identity', position=position_dodge(.9), width=.25) +
+    geom_text(data=pvals, aes(x=x, y=pos, label=label), hjust='center', size=8, angle=90) +
+    scale_fill_brewer(name=legend.title, palette=palette) + coord_flip() + xlab(xlab) + ylab(ylab)
+
+    # Save plot
+    if(!is.null(out)){save_plot(plot=p, filename=out)}
+    p
 }
 
 
