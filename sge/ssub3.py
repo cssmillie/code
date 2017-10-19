@@ -21,7 +21,7 @@ def parse_args():
     parser.add_argument('-s', default='platinum.broadinstitute.org', help='server')
     parser.add_argument('-p', default=False, action='store_true', help='print commands')        
     parser.add_argument('-w', default=600, type=float, help='pipeline wait time (sec)')
-    parser.add_argument('-r', default=0, type=int, help='max retry')
+    parser.add_argument('-r', default=2, type=int, help='max retry')
     parser.add_argument('-R', default=True, action='store_false', help='no random users')
     parser.add_argument('-W', default=float('inf'), type=float, help='max inactivity (sec)')
     parser.add_argument('-g', default=False, action='store_true', help='group tasks')

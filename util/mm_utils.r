@@ -37,15 +37,18 @@ mm_logical_not = function(mm, form, data, method='multi', invert='last'){
     # Each column of the model matrix is either a single term A or an interaction A:B
     # If single term, then logical not is ~A
     # If interaction, then logical not is A:~B (invert = last) or ~A:~B (invert = all)
-    # For multi-level factors, ~A is the next level of A (method = multi) or !A (method = binary)
+    # For multi-level factors, ~A is the next level of A (method = multi) or !A (method = binary)    
     
-    # find columns and factors associated with the model matrix
+    # map factors to variables
     vars = mm_reverse(mm, form, data)
     
     # for each model matrix column...
     mm.cols = grep('Intercept', colnames(mm), invert=T, value=T)
+    
     res = sapply(1:length(vars), function(j){
 
+    	if(vars[[j]][[2]] == ''){return(rep(NA, nrow(mm)))}
+    	
 	# setup the logical not vector
 	u = rep(TRUE, nrow(data))
 	n = ''
@@ -53,14 +56,17 @@ mm_logical_not = function(mm, form, data, method='multi', invert='last'){
 	# iterate through all (column,factor) pairs
 	cat(paste0('\nInverse for ', mm.cols[[j]], ': '))
 	vj = vars[[j]]
+	
 	for(i in 1:nrow(vj)){
 
 	   # get the column, factor, and next highest level
-	   ci = vj[i,1]
-	   fi = vj[i,2]
-	   li = levels(data[,ci])[which(levels(data[,ci]) == fi) - 1]
+	   ci = vj[i,1] # column
+	   fi = vj[i,2] # factor
+	   li = levels(data[,ci])[which(levels(data[,ci]) == fi) - 1] # next level
 	   
 	   # inversion logic
+	   # n = name of logical not group (e.g. GF+ Stem-)
+	   # u = logical not vector
 	   if(i < nrow(vj)){
 	       if(invert == 'all'){
 	           n = paste0(n, fi, '-')

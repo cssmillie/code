@@ -8,6 +8,6 @@ write_excel = function(data, out, row.names=FALSE){
     # out = output file (.xls)
     
     for(name in names(data)){
-        write.xlsx(data[[name]], file=out, sheetName=name, append=TRUE, row.names=FALSE)
+        write.xlsx(data[[name]], file=out, sheetName=name, append=TRUE, row.names=row.names)
     }
 }

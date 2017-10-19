@@ -27,7 +27,7 @@ parser.add_argument('-D', help='delete jobs', default=False, action='store_true'
 parser.add_argument('-e', help='error file', default=False, action='store_true')
 parser.add_argument('-j', help='job id (default=all)', default='')
 parser.add_argument('-q', help='queued', default=False, action='store_true')
-parser.add_argument('-u', help='usernames', default='csmillie,mbiton,eugened')
+parser.add_argument('-u', help='usernames', default='csmillie,mbiton,eugened,nrogel')
 parser.add_argument('-x', help='job regex', default='')
 args = parser.parse_args()
 
