@@ -22,7 +22,6 @@
 # =============================================================================
 #
 #$ -N __MRO_JOB_NAME__
-#$ -q short
 #$ -P regevlab
 #$ -V
 #$ -pe smp __MRO_THREADS__
@@ -31,6 +30,7 @@
 #$ -o __MRO_STDOUT__
 #$ -e __MRO_STDERR__
 #$ -l h_vmem=__MRO_MEM_GB_PER_THREAD__G
+#$ -l h_rt=12:00:00
 #$ -R y
 #$ -S "/usr/bin/env bash"
 

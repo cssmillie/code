@@ -1,4 +1,5 @@
-import argparse, ssub
+import argparse
+import ssub3 as ssub
 
 # get input arguments
 parser = argparse.ArgumentParser()
@@ -17,6 +18,6 @@ cmd = 'bcl2fastq --runfolder-dir %s --sample-sheet %s --output-dir ./Data --mask
 Submitter = ssub.Submitter()
 Submitter.H = 'use .bcl2fastq2-2.17.1.14'
 Submitter.m = args.m
-Submitter.q = 'long'
 Submitter.o = 'demult'
+Submitter.t = [3600*12, 3600*24]
 Submitter.submit([cmd])

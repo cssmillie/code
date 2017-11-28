@@ -12,12 +12,12 @@ def parse_args():
 
     # add command line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', default=8, type=int, help='memory (gb)')
+    parser.add_argument('-m', default=8, help='memory (gb)')
     parser.add_argument('-t', default=7200, help='time (sec)')
     parser.add_argument('-o', default='run', help='output prefix', required=True)
     parser.add_argument('-P', default='regevlab', help='project name')
     parser.add_argument('-H', default='', help='header lines')
-    parser.add_argument('-u', default='', help='username')
+    parser.add_argument('-u', default='csmillie', help='username')
     parser.add_argument('-s', default='platinum.broadinstitute.org', help='server')
     parser.add_argument('-p', default=False, action='store_true', help='print commands')        
     parser.add_argument('-w', default=600, type=float, help='pipeline wait time (sec)')
@@ -70,8 +70,8 @@ def get_filename(prefix, suffix='txt', path='.'):
 
 
 class Task():
-
     
+        
     def __init__(self, command, inputs=[], outputs=[], m=[0], t=[7200], u=['']):
         
         # job tracking
@@ -86,6 +86,7 @@ class Task():
         self.inputs = inputs
         self.outputs = outputs
         self.status = 'waiting'
+        self.success = False
         
         # current resources
         self.m = None # memory
@@ -134,7 +135,6 @@ class Task():
         return '%s.%s.%s' %(self.u, self.t, self.m)
 
 
-
 # --------------
 # task submitter
 # --------------
@@ -167,13 +167,13 @@ class Submitter():
         self.inactivity = time.time()
         
         # fix arguments
-        self.m = map(int, str(self.m).split(','))
+        self.m = str(self.m).split(',')
         self.t = str(self.t).split(',')
         self.u = self.u.split(',')
         
         # account setup
-        self.me = 'csmillie'
-        self.users = ['', 'eugened', 'mbiton', 'nrogel']
+        self.me = self.system('echo $USER').rstrip()
+        self.users = [user if user != self.me else '' for user in self.u]
         
         # cluster parameters
         self.stat_cmd = 'qstat -g d -u %s | egrep -v "^job|^-"' %(','.join(self.users + [self.me]))
@@ -247,7 +247,7 @@ class Submitter():
         self.tasks.append(task)
     
     
-    def running_uids(self):        
+    def get_running_uids(self):        
         uids = {}
         for line in self.qstat():
             line = line.rstrip().split()
@@ -275,7 +275,7 @@ class Submitter():
     
     def update_tasks(self):
         # update task status with single qstat
-        running_uids = self.running_uids()
+        running_uids = self.get_running_uids()
         for task in self.tasks:
             if task.uid() in running_uids:
                 task.status = 'running'
@@ -437,12 +437,12 @@ class Writer():
     
     def write_array(self, tasks, H=''):
         
-        # get filename
+        # get filenames
         array = get_filename(prefix=self.prefix, suffix='sh', path=self.path)
         
         # array text
         text = self.array_header(H) + '\n'
-        for i,task in enumerate(tasks):
+        for i, task in enumerate(tasks):
             text += 'array[%d]="%s"\n' %(i+1, task.command)
         text += '\neval ${array[$SGE_TASK_ID]}\n\n'
         
@@ -504,6 +504,7 @@ class Writer():
         if self.verbose:
             print text,
         self.log.write(text)
+    
 
 
 # ---------------

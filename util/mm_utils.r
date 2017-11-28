@@ -8,6 +8,7 @@ mm_reverse = function(mm, form, data){
 
     # Find columns
     ttf = attr(terms(as.formula(form), data=data), 'factors')
+    ttf = ifelse(ttf == 0, 0, 1)
     mmi = attr(mm, 'assign')
     ttf = ttf[,mmi,drop=F]
     
@@ -31,13 +32,14 @@ mm_reverse = function(mm, form, data){
 }
 
 
-mm_logical_not = function(mm, form, data, method='multi', invert='last'){
-
+mm_logical_not = function(mm, form, data, method='auto', invert='last'){
+    
     # Calculate the logical inverse of a model matrix
     # Each column of the model matrix is either a single term A or an interaction A:B
     # If single term, then logical not is ~A
     # If interaction, then logical not is A:~B (invert = last) or ~A:~B (invert = all)
-    # For multi-level factors, ~A is the next level of A (method = multi) or !A (method = binary)    
+    # For multi-level factors, ~A is !A, reference level, or next highest level (method = other, ref, next)
+    # 'auto' defaults to 'other' (for unordered factors) or 'ref' (for ordered factors)
     
     # map factors to variables
     vars = mm_reverse(mm, form, data)
@@ -59,10 +61,18 @@ mm_logical_not = function(mm, form, data, method='multi', invert='last'){
 	
 	for(i in 1:nrow(vj)){
 
-	   # get the column, factor, and next highest level
-	   ci = vj[i,1] # column
-	   fi = vj[i,2] # factor
-	   li = levels(data[,ci])[which(levels(data[,ci]) == fi) - 1] # next level
+	   # get the column, factor, reference level, and next highest level
+	   ci = vj[i,1]
+	   fi = vj[i,2]
+	   ri = levels(data[,ci])[1]
+	   li = levels(data[,ci])[which(levels(data[,ci]) == fi) - 1]
+
+	   # get invert method
+	   if(method == 'auto'){
+	       mi = ifelse(is.ordered(data[,ci]), 'ref', 'other')
+	   } else {
+	       mi = method
+	   }
 	   
 	   # inversion logic
 	   # n = name of logical not group (e.g. GF+ Stem-)
@@ -76,10 +86,13 @@ mm_logical_not = function(mm, form, data, method='multi', invert='last'){
 		   u = u & data[,ci] == fi
 	       }
 	   } else {
-	       if(method == 'binary'){
-	           n = paste0(n, fi, '- \n')
+	       if(mi == 'other'){
+	           n = paste0(n, fi, '-')
 		   u = u & data[,ci] != fi
-	       } else if(method == 'multi'){
+	       } else if(mi == 'ref'){
+	           n = paste0(n, ri, '-')
+		   u = u & data[,ci] == ri
+	       } else if(mi == 'next'){
 	           n = paste0(n, li, '+')
 		   u = u & data[,ci] == li
 	       } else {

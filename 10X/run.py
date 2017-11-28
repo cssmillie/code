@@ -1,4 +1,5 @@
-import argparse, os, re, ssub
+import argparse, os, re
+import ssub3 as ssub
 
 steps = 'demux cellranger cp dge tsne'.split()
 
@@ -155,12 +156,15 @@ if check_step('tsne'):
 # Run pipeline
 # ------------
 
-for cmd in pipeline:
-    print '\n'.join(cmd)
-
-import ssub
+import ssub3 as ssub
 Ssub = ssub.Submitter()
 Ssub.m = args.m
 ssub.p = args.p
-Ssub.q = 'long'
-Ssub.submit_pipeline(pipeline)
+
+for group in pipeline:
+    print '\n'.join(group)
+
+for cmd in pipeline:
+    Ssub.add_task(cmd)
+
+Ssub.submit()
