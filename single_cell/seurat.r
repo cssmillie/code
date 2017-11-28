@@ -4,6 +4,7 @@ require(methods)
 
 source('~/code/single_cell/batch.r')
 source('~/code/single_cell/cluster.r')
+source('~/code/single_cell/downsample.r')
 source('~/code/single_cell/map.r')
 source('~/code/single_cell/markers.r')
 source('~/code/single_cell/parallel.r')
@@ -111,7 +112,8 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
 }
 
 
-run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=4000, ident_fxn=NULL, varmet='karthik', min_cv2=.25,
+run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=4000, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
+             min_cv2=.25,
 	     num_genes=1500, do.batch='none', batch.use=NULL, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, dist.use='cosine', do.largevis=FALSE, largevis.k=50,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
 
@@ -125,7 +127,10 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     if(ncol(seur@data) <= stop_cells){return(seur)}
     
     msg(name, 'Selecting variable genes', verbose)
-    var_genes = get_var_genes(seur@raw.data, ident=seur@ident, method=varmet, num_genes=num_genes)
+    ident = seur@ident
+    levels(ident)[table(ident)[levels(ident)] <= 25] = 'Merge'   
+    var_genes = get_var_genes(seur@raw.data, ident=ident, method=varmet, num_genes=num_genes)
+    if(!is.null(var_regexv)){var_genes = grep(var_regexv, var_genes, invert=T, value=T)}
     msg(name, sprintf('Found %d variable genes', length(var_genes)), verbose)
     seur@var.genes = intersect(var_genes, rownames(seur@data))
     
@@ -143,12 +148,10 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
 	bc.data = batch_correct(seur, batch.use, design=design, method=do.batch, genes.use='var')
 	pc.data = t(scale(t(bc.data)))
     }
-    #if(is.null(pc.data)){pc.data = seur@scale.data}
     if(is.null(pc.data)){pc.data = seur@data}
     
     # Number of significant PCs (stored in seur@data.info$num_pcs)
     if(num_pcs == 0){
-        #num_pcs = sig.pcs.perm(t(pc.data[seur@var.genes,]), randomized=T, n.cores=ncores)$r + 2
 	num_pcs = sig.pcs.perm(scale(t(seur@data)), randomized=T, n.cores=ncores)$r + 2
     }
     if(is.na(num_pcs)){num_pcs = 5}
@@ -156,7 +159,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     msg(name, sprintf('Found %d significant PCs', num_pcs), verbose)
 
     # Fast PCA on data
-    seur = run_rpca(seur, data=pc.data, k=50, genes.use=seur@var.genes, robust=robust_pca, rescale=T)    
+    seur = run_rpca(seur, data=pc.data, k=50, genes.use=seur@var.genes, robust=robust_pca, rescale=T)
     msg(name, 'PC loadings', verbose)
     loaded_genes = get.loaded.genes(seur@pca.obj[[1]], components=1:num_pcs, n_genes=20)
     print(loaded_genes)
@@ -282,4 +285,18 @@ map_ident = function(seur, old_ident){
     new_ident[i,1] = old_ident[i,1]
     new_ident = structure(as.factor(new_ident[,1]), names=rownames(new_ident))
     return(new_ident)
+}
+
+
+update_signatures = function(seur){
+    
+    # Predict host (human or mouse)
+    genes = rownames(seur@data)
+    
+    # Calculate signatures
+    seur@data.info = cbind(seur@data.info, get_scores(seur, file='cell_cycle'))
+    seur@data.info = cbind(seur@data.info, get_scores(seur, file='early'))
+    seur@data.info$nGene = colSums(seur@data > 0)
+    
+    return(seur)
 }

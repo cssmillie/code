@@ -18,7 +18,14 @@ test_log_base = function(seur, base=2, total=1e4){
 }
 
 
-get_data = function(seur, data.use='tpm', tpm=NULL){
+unorder_factors = function(x){
+    j = sapply(x, is.ordered)
+    x[,j] = lapply(x[,j,drop=F], function(a) factor(as.character(a), levels=levels(a)))
+    x
+}
+
+
+get_data = function(seur, data.use='tpm', tpm=NULL, cells.use=NULL){
     
     # Retrieve data from a Seurat object
     # data.use can be: counts, tpm, log2, data, any matrix
@@ -34,7 +41,7 @@ get_data = function(seur, data.use='tpm', tpm=NULL){
     
     if(data.use == 'tpm'){
         if(is.null(tpm)){
-	    data = calc_tpm(seur)
+	    data = calc_tpm(seur, cells.use=cells.use)
 	} else {
 	    data = tpm
 	}
@@ -51,7 +58,7 @@ get_data = function(seur, data.use='tpm', tpm=NULL){
 }
 
 
-select_cells = function(covariates, cells.use=NULL, max_cells=NULL){
+select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_cells=NULL){
     
     # Select cells from covariates matrix using cells.use and max_cells
     cat('\nSelecting cells\n')
@@ -66,13 +73,22 @@ select_cells = function(covariates, cells.use=NULL, max_cells=NULL){
     
     # Construct cell groups
     j = sapply(covariates, function(a) !is.numeric(a))
-    groups = apply(covariates[cells,j,drop=F], 1, function(a) paste(a, collapse='.'))
+    groups = as.factor(apply(covariates[cells,j,drop=F], 1, function(a) paste(a, collapse='.')))
     cat('\n')
     print(table(groups))
     
     # Select max_cells from each group
     if(!is.null(max_cells)){
-        cells = unlist(tapply(cells, groups, function(a) sample(a, min(max_cells, length(a)))))
+    
+        # Combine batch.use and groups to sample evenly across batches
+        batch.use = as.factor(paste0(groups, batch.use))
+	
+	# Sample [max_cells] separately from each group
+	cells = unname(unlist(lapply(levels(groups), function(group){
+	    simple_downsample(cells=cells[groups == group], groups=batch.use[groups == group], total_cells=max_cells)
+	})))
+			
+	# Print subsampled group sizes
 	groups = apply(covariates[cells,j,drop=F], 1, function(a) paste(a, collapse='.'))
 	cat('\n')
 	print(table(groups))
@@ -100,14 +116,14 @@ select_genes = function(seur, stats, genes.use=NULL, min_cells=3, min_alpha=.025
     } else {
         g3 = as.character(stats[, max(abs(log2fc)) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
     }
-
+    
     # Intersect and return genes.use
     genes.use = Reduce(intersect, list(genes.use, g1, g2, g3))
     return(genes.use)
 }
 
 
-expression_stats = function(tpm, covariates, formula, lrt_regex, cells.use=NULL, invert_method='multi', invert_logic='last'){
+expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL, cells.use=NULL, invert_method='auto', invert_logic='last'){
     
     # Calculate expression statistics for groups specified by formula
     # each column of the model matrix is either a single term A or an interaction term A:B
@@ -115,17 +131,20 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, cells.use=NULL,
     # if interaction, then select cells A:B and A:~B
     # for multi-level factors, ~A is the next highest level of A
     source('~/code/util/mm_utils.r')
-    
+
     # Select cells
-    total = rowSums(tpm)
     if(!is.null(cells.use)){
         tpm = tpm[,cells.use]
 	covariates = covariates[cells.use,,drop=F]
     }
     
+    # Select genes
+    if(!is.null(genes.use)){tpm = tpm[genes.use,]}
+    total = rowSums(tpm)
+    
     # Model matrix
     print('Model matrix')
-    mm = as.matrix(model.matrix(as.formula(formula), data=covariates))
+    mm = as.matrix(model.matrix(as.formula(formula), data=unorder_factors(covariates)))
     
     # Invert matrix
     print('Invert matrix')
@@ -135,23 +154,51 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, cells.use=NULL,
     
     # For every column that matches lrt_regex
     print('Expression stats')
-    stats = lapply(grep(lrt_regex, colnames(mm), value=T), function(a){
+    stats = lapply(grep(lrt_regex, colnames(mm), value=T), function(a){print(a)
         
-	# Select cells in each group
+	# cell indices
 	i = as.logical(mm[,a])
 	j = as.logical(MM[,a])
 	ref = refs[[a]]
 	
-	# Gene expression statistics
-	n1 = rowSums(tpm[,i] > 0); n2 = rowSums(tpm[,j] > 0)
-	s1 = rowSums(tpm[,i]); s2 = rowSums(tpm[,j])
-	a1 = n1/sum(i); a2 = n2/sum(j)
-	m1 = s1/n1; m2 = s2/n2
-	u1 = s1/sum(i); u2 = s2/sum(j)
-	t1 = s1/total; t2 = s2/total
+	# number of expressing cells
+	n1 = rowSums(tpm[,i] > 0)
+	n2 = rowSums(tpm[,j] > 0)
+	
+	# total expression over all cells
+	s1 = rowSums(tpm[,i])
+	s2 = rowSums(tpm[,j])
+	
+	# fraction of expressing cells (alpha)
+	a1 = n1/sum(i)
+	a2 = n2/sum(j)
+	
+	# mean over expressing cells (mu)
+	m1 = ifelse(n1 > 0, s1/n1, 0)
+	m2 = ifelse(n2 > 0, s2/n2, 0)
+	
+	# mean over all cells
+	u1 = s1/sum(i)
+	u2 = s2/sum(j)
+	
+	# fraction of total expression
+	t1 = s1/total
+	t2 = s2/total
+	
+	# fix zeros for logs
+	zero = min(min(m1[m1 > 0]), min(m2[m2 > 0]))
+	m1 = m1 + .5*zero
+	m2 = m2 + .5*zero
+	
 	zero = min(min(u1[u1 > 0]), min(u2[u2 > 0]))
-	log2fc = log2(u1 + .5*zero) - log2(u2 + .5*zero)
-	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=m1, ref_mu=m2, mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc)
+	u1 = u1 + .5*zero
+	u2 = u2 + .5*zero
+	
+	# log fold change
+	log2fc = log2(u1) - log2(u2)
+	
+	# combine in data frame
+	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=log2(m1), ref_mu=log2(m2), mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc)
 	return(res)
     })
     stats = as.data.table(do.call(rbind, stats))
@@ -172,7 +219,7 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
     covariates = covariates[cells.use,,drop=F]
     
     # Model matrix
-    mm = as.matrix(model.matrix(as.formula(formula), data=covariates))
+    mm = as.matrix(model.matrix(as.formula(formula), data=unorder_factors(covariates)))
     
     # Invert matrix
     u = mm_logical_not(mm, formula, covariates, method=invert_method, invert=invert_logic)
@@ -204,8 +251,8 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
 }
 
 
-p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000, dir='pos',
-	                  tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='multi', invert_logic='last', do.stats=FALSE, n.cores=1){
+p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000, batch.use=NULL,
+	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1){
     
     # Build covariates
     print(c(ident.1, ident.2))
@@ -215,8 +262,7 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
 	    ident.use = as.factor(ifelse(ident.use == ident.1, ident.1, 'Other'))
 	    ident.use = relevel(ident.use, 'Other')
 	} else {
-	    ident.use = as.factor(ifelse(ident.use %in% c(ident.1, ident.2), as.character(ident.use), NA))
-	    ident.use = relevel(ident.use, ident.2)
+	    ident.use = factor(ifelse(ident.use %in% c(ident.1, ident.2), as.character(ident.use), NA), levels=c(ident.2, ident.1))
 	}
 	if(is.null(covariates)){
 	    covariates = data.frame(ident=ident.use)
@@ -231,16 +277,16 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     if('character' %in% q){print(q); stop('error: invalid covariates type')}
     
     # Select cells
-    cells.use = select_cells(covariates, cells.use=cells.use, max_cells=max_cells)
+    cells.use = select_cells(seur, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
     
     # TPM for log fold changes
-    tpm = get_data(seur, data.use='tpm', tpm=tpm)
+    tpm = get_data(seur, data.use='tpm', tpm=tpm, cells.use=cells.use)
     
     # Data for DE test
-    data = get_data(seur, data.use=data.use, tpm=tpm)
+    data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use)
     
     # Expression stats
-    stats = expression_stats(tpm, covariates, formula, lrt_regex, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
+    stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
     
     # Select genes
     genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
@@ -257,8 +303,7 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     # Subset data
     print(paste('Testing', length(genes.use), 'genes in', length(cells.use), 'cells'))
     data = data[genes.use, cells.use, drop=F]
-    covariates = covariates[cells.use, , drop=F]
-    print(lapply(covariates, table))
+    covariates = unorder_factors(covariates[cells.use, , drop=F])
     
     # Run marker tests
     labels = covariates[,1]
@@ -268,7 +313,8 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     if(test.use == 'mast'){markers = de.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, n.cores=n.cores)}
     if(test.use == 'gsea'){markers = gsea.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)}
     if(test.use == 'roc'){markers = de.rocr(data, labels, measures='auc')}
-    
+    if(test.use == 'mpath'){markers = de.mpath(seur@raw.data[genes.use,cells.use], covariates=covariates, formula=formula)}
+
     # Add cluster information
     if(! 'contrast' %in% colnames(markers)){
         markers$contrast = paste0('ident', levels(labels)[nlevels(labels)])
@@ -278,7 +324,7 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     markers = as.data.table(markers)
     setkey(stats, gene, contrast)
     setkey(markers, gene, contrast)
-    markers = markers[stats,,nomatch=0]
+    markers = markers[stats,]
     
     # Sort markers
     if('auc' %in% colnames(markers)){
@@ -287,9 +333,14 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
         markers = markers[order(contrast, -1*f1),]
     } else if('pval' %in% colnames(markers)){
         markers = markers[order(contrast, pval),]
+    } else if('pvalH' %in% colnames(markers)){
+        markers = markers[order(contrast, pvalH),]
     } else {
         markers = markers[order(contrast, -1*alpha),]
     }
+
+    # Add ident
+    markers$ident = paste(ident.1, ident.2, sep=';')
     
     # Return marker genes
     return(markers)
@@ -341,7 +392,7 @@ p.pairwise_markers = function(seur, ident.1, data.use='log2', tpm=NULL, n.cores=
 
 
 p.pairwise_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ...){
-    library(pryr)
+    
     # Get cell identities
     idents = as.character(levels(seur@ident))
     
@@ -362,43 +413,50 @@ p.pairwise_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ..
 }
 
 
-merge_markers = function(fns=NULL, path='.', pattern=NULL, order_by=NULL, cluster_regex=NULL, ref_regex=NULL){
-
-    # Combine markers with option to extract cluster names with regex
-    require(data.table)
+specific_markers = function(seur, markers, covariates=NULL, formula='~ ident', lrt_regex=NULL, test.use='mast', data.use='log2', tpm=NULL, n.cores=1, ...){
     
-    # Read files
-    if(is.null(fns)){
-        fns = list.files(path=path, pattern=pattern)
+    # Check arguments
+    markers[, ident := gsub(':.*', '', gsub('ident', '', contrast))]    
+    markers[, keep := TRUE]
+    if(! 'pvalH' %in% colnames(markers) | test.use != 'mast'){stop('test.use != mast')}
+    
+    # Get cell identities
+    idents = as.character(levels(seur@ident))
+    
+    # Pre-calculate TPM
+    tpm = get_data(seur, data.use='tpm', tpm=tpm)
+    
+    # Pre-calculate data
+    data = get_data(seur, data.use=data.use, tpm=tpm)
+    
+    # Find marker genes
+    for(i in idents){
+        for(j in setdiff(idents, i)){
+	    
+	    # get genes to test
+	    genes.1 = markers[ident == i & keep == TRUE, gene]
+	    genes.2 = markers[ident == j & keep == TRUE, gene]
+	    genes.use = intersect(genes.1, genes.2)
+	    print(paste('Testing', length(genes.use), 'genes'))
+	    if(length(genes.use) == 0){next}
+	    
+	    # get lrt_regex
+	    lrt_regex = paste(paste0(unique(markers[ident == i, contrast]), '$'), collapse='|')
+	    
+	    # run marker test
+	    mi = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, dir='pos', covariates=covariates, formula=formula, lrt_regex=lrt_regex, test.use='mast', ...)
+	    
+	    # update genes to keep
+	    if(is.null(mi)){
+	        genes.remove = genes.use
+	    } else {
+	        genes.remove = setdiff(genes.use, mi[pvalH <= .05 & log2fc > 0, gene])
+	    }
+	    markers[ident == i & gene %in% genes.remove]$keep = FALSE
+	}
+	print(paste('ident', i, 'found', sum(markers[ident == i, keep]), 'genes'))
     }
-    print(paste('Merging', length(fns), 'files'))
-
-    # Test regex
-    if(!is.null(cluster_regex)){print(paste('Cluster regex:', gsub(cluster_regex, '\\1', fns[[1]], perl=T)))}
-    if(!is.null(ref_regex)){print(paste('Ref regex:', gsub(ref_regex, '\\1', fns[[1]], perl=T)))}
-
-    # Get markers
-    m = do.call(rbind, lapply(fns, function(fn){
-	mi = as.data.frame(fread(fn, sep='\t', header=T, stringsAsFactors=F))
-	if(!is.null(cluster_regex)){mi[['cluster']] = gsub(cluster_regex, '\\1', fn)}
-	if(!is.null(ref_regex)){mi[['ref_cluster']] = gsub(ref_regex, '\\1', fn)}
-	mi
-    }))
-    return(m)
-}
-
-
-collapse_markers = function(m, group_by=list(cluster, gene), collapse_by=which.max(mastfc), strict=FALSE){
-
-    # Collapse pairwise marker list
-    # Uses non-standard evaluation (see default arguments)
-    
-    require(data.table)
-    group_by = substitute(group_by)
-    collapse_by = substitute(collapse_by)
-    
-    m = setDT(m)[,{mi = .SD[eval(collapse_by)]; mi$N = .N; mi}, group_by]
-    return(as.data.frame(m))
+    return(markers)
 }
 
 
@@ -428,6 +486,7 @@ calc_rocr = function(predictions, labels, measures='auc', retx=FALSE){
     if(retx) {c(x,y)} else {round(y, 3)}
 }
 
+
 de.rocr = function(data, labels, measures='auc'){
     
     # Calculate AUC of ROC curve and average difference
@@ -440,6 +499,7 @@ de.rocr = function(data, labels, measures='auc'){
     markers = markers[order(markers[,cname], decreasing=T),]
     return(markers)
 }
+
 
 calc_fdr = function(predictions, labels){
 
@@ -459,6 +519,7 @@ calc_fdr = function(predictions, labels){
     return(c(f[[1]], acc, tpr, tnr, fdr, f[[2]]))
 }
 
+
 de.fdr = function(data, labels, sens_cut=.1){
 
     # Calculate classification statistics
@@ -475,11 +536,12 @@ de.fdr = function(data, labels, sens_cut=.1){
     
 }
 
+
 de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     
     load_mast()
     options(mc.cores=n.cores)
-    
+
     # Make single cell assay (SCA) object
     fdata = data.frame(matrix(rep(1, nrow(data))))
     covariates = as.data.frame(covariates)
@@ -500,8 +562,8 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     
     # Get component information
     res.f = res[res$component == 'logFC', .(primerid, contrast, coef)]
-    res.d = res[res$component == 'D', .(primerid, contrast, coef)]
-    res.c = res[res$component == 'C', .(primerid, contrast, coef)]
+    res.d = res[res$component == 'D', .(primerid, contrast, coef, `Pr(>Chisq)`)]
+    res.c = res[res$component == 'C', .(primerid, contrast, coef, `Pr(>Chisq)`)]
     res.h = res[res$component == 'H', .(primerid, contrast, `Pr(>Chisq)`)]
     
     # Combine results
@@ -510,262 +572,49 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     res = data.frame(subset(res, !is.na(`Pr(>Chisq)`)), stringsAsFactors=F)
     
     # Cleanup results
-    colnames(res) = c('gene', 'contrast', 'coefD', 'coefC', 'mastfc', 'pval')
-    res = res[order(res$contrast, res$pval),]
-    
-    options(mc.cores=1)
-    return(as.data.table(res))
-}
+    colnames(res) = c('gene', 'contrast', 'coefD', 'pvalD', 'coefC', 'pvalC', 'mastfc', 'pvalH')
+    res = res[order(res$contrast, res$pvalH),]
 
-
-gsea.fisher = function(gene_set1, gene_set2, reference='~/aviv/db/map_gene/hg19_genes.txt', n.cores=1){
-
-    # GSEA with fisher test
-    # gene_set1 = list of genes
-    # gene_set2 = list of genes
-    # return matrix of p-values
-
-    # convert gene sets to list
-    if(typeof(gene_set1) != 'list'){gene_set1 = list(gene_set1)}
-    if(typeof(gene_set2) != 'list'){gene_set2 = list(gene_set2)}
-    
-    # pairwise fisher tests
-    all_genes = readLines(reference)
-    m = run_parallel(
-        foreach(i=gene_set1, .combine=rbind) %:% foreach(j=gene_set2, .combine=c) %dopar% {
-	    u = factor(all_genes %in% unlist(i), levels=c(FALSE, TRUE))
-	    v = factor(all_genes %in% unlist(j), levels=c(FALSE, TRUE))
-	    fisher.test(table(u,v))$p.value
-	},
-	n.cores=n.cores
-    )
-    rownames(m) = names(gene_set1)
-    colnames(m) = names(gene_set2)
-    return(m)
-}
-
-gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=100, n.cores=1){
-
-    load_mast()
-    options(mc.cores=n.cores)
-    
-    # Make single cell assay object
-    fdata = data.frame(matrix(rep(1, nrow(data))))
-    covariates = as.data.frame(covariates)
-    sca = MAST::FromMatrix(as.matrix(data), covariates, fdata)    
-    
-    # Fit MAST hurdle model
-    if(is.null(formula)){
-        formula = paste('~' , paste(colnames(covariates), collapse=' + '))
-    }
-    zlm.obj = zlm(as.formula(formula), sca)
-    
-    # Calculate bootstraps
-    boot = bootVcov1(zlm.obj, gsea.boot)
-    
-    # Get GO gene list
-    genes = read.table('~/aviv/db/gopca/go_annotations_human.tsv', sep='\t', stringsAsFactors=F, row.names=1)
-    sets = structure(strsplit(genes[,4], ','), names=rownames(genes))
-    sets = lapply(sets, function(a){b = as.integer(na.omit(match(a, rownames(zlm.obj@coefC))))})
-    sets = sets[sapply(sets, length) >= 5]
-    
-    # Get hypothesis columns
-    names = colnames(zlm.obj@coefC)[grep(paste(lrt_regex, collapse='|'), colnames(zlm.obj@coefC))]
-    
-    # Perform GSEA
-    res = lapply(names, function(a){
-        gsea = summary(gseaAfterBoot(zlm.obj, boot, sets, CoefficientHypothesis(a)))
-	gsea$name = genes[as.character(gsea$set), 3]
-	gsea$genes = genes[as.character(gsea$set), 4]
-	gsea$contrast = a
-	return(gsea)
-    })
-    res = do.call(rbind, res)
+    # Replace NAs in mastfc with maximum
+    res = as.data.table(res)
+    res[, mastfc := ifelse(is.na(mastfc), max(mastfc, na.rm=T), mastfc), .(contrast)]
     
     options(mc.cores=1)
     return(res)
 }
 
 
-plot_markers = function(markers, top=25, dir='pos', cols=1, base_size=12, regex=NULL, rm_regex=NULL){
-    
-    require(ggplot2)
-    require(tidyr)
-    require(naturalsort)
-	     
-    single_plot = function(m, cluster='cluster', gene='gene', value='auc', palette='OrRd', rm_regex=NULL){
+filter_mast = function(markers, regex=NULL, pval=NULL, padj=NULL, min_log2fc=NULL, type='all', seur=NULL, covariates=NULL, formula=NULL, top=NULL, sort.by=pval, split=FALSE){
 
-        u = data.frame(tapply(1:nrow(m), list(m[,cluster]), function(a){b=a[1:top]; m[b,gene,drop=F]}))
-	v = data.frame(tapply(1:nrow(m), list(m[,cluster]), function(a){b=a[1:top]; m[b,value,drop=F]}))
-	
-	if(!is.null(regex)){
-	    u = u[,grepl(regex, colnames(u))]
-	    v = v[,grepl(regex, colnames(v))]
-	}
-	
-	if(!is.null(rm_regex)){
-	    u = u[,!grepl(rm_regex, colnames(u))]
-	    v = v[,!grepl(rm_regex, colnames(v))]
-	}
-	
-	if(value == 'pval'){v = -1*log10(v)}
-	
-	u$index = rev(1:nrow(u))
-	v$index = rev(1:nrow(v))
-	
-	u = gather(u, Cluster, Gene, -index)
-	v = gather(v, Cluster, Value, -index)
-
-	# Fix some formatting
-	v$Value[is.infinite(v$Value)] = max(v$Value[is.finite(v$Value)])	
-	u$Cluster = factor(u$Cluster, levels=naturalsort(unique(u$Cluster)), ordered=T)
-	v$Cluster = factor(v$Cluster, levels=naturalsort(unique(v$Cluster)), ordered=T)
-	legend_title = list('auc'='AUC', 'pval'='-log10(pval)')[value]
-	
-	p = ggplot(v) + geom_tile(aes(x=Cluster, y=index, fill=Value)) + scale_fill_distiller(palette=palette, trans='reverse', na.value='white') + geom_text(data=u, aes(x=Cluster, y=index, label=Gene)) + ylab('Gene') + xlab('Covariate') + guides(fill=guide_legend(title=legend_title)) + theme_minimal(base_size=base_size)
-	
-	return(p)
-    }
+    # Select by contrast
+    if(!is.null(regex)){markers = markers[grep(regex, contrast)]}
     
-    if('contrast' %in% colnames(markers)){
-        cluster = 'contrast'
-	value = 'pval'
-	m.pos = markers[markers$log2fc > 0,]
-	m.neg = markers[markers$log2fc < 0,]
-    } else if('auc' %in% colnames(markers)) {
-        cluster = 'cluster'
-	value = 'auc'
-	m.pos = markers[markers$auc >= .5,]
-	m.neg = markers[markers$auc < .5,]
-	m.neg[,'auc'] = 1 - m.neg[,'auc']
-    } else if('prec_rec' %in% colnames(markers)){
-        cluster = 'cluster'
-	value = 'prec_rec'
-	m.pos = markers[markers$prec_rec >= .5,]
-	m.neg = markers[markers$prec_rec < .5,]
-	m.neg['prec_rec'] = 1 - m.neg[,'prec_rec']
+    # Adjust p-values
+    if(! 'padj' %in% colnames(markers)){markers[, padj := p.adjust(pval, 'fdr'), .(contrast)]}
+    
+    # Filter by p-value
+    if(!is.null(pval)){markers = markers[pval <= pval]}
+    if(!is.null(padj)){markers = markers[padj <= padj]}
+    
+    # Filter by log2fc
+    if(!is.null(min_log2fc)){markers = markers[log2fc >= min_log2fc]}
+    
+    # Filter by type
+    if(type == 'all'){
+        markers = markers
+    } else if(type == 'unique'){
+        markers = markers[, if(.N == 1){.SD}, .(gene)]
     } else {
-        print('Unknown marker type')
+        markers = specific_markers(seur, markers, covariates=covariates, formula=formula)[keep == TRUE]
     }
     
-    if(dir == 'pos'){
-        single_plot(m.pos, cluster=cluster, gene='gene', value=value, palette='OrRd', rm_regex=rm_regex)
-    } else if(dir == 'neg'){
-        single_plot(m.neg, cluster=cluster, gene='gene', value=value, palette='Blues', rm_regex=rm_regex)
-    } else if(dir == 'both'){
-        ps = list()
-        ps[['pos']] = single_plot(m.pos, cluster=cluster, gene='gene', value=value, palette='OrRd', rm_regex=rm_regex)
-        ps[['neg']] = single_plot(m.neg, cluster=cluster, gene='gene', value=value, palette='Blues', rm_regex=rm_regex)
-    	
-        source('~/code/single_cell/plot.r')
-        multiplot(plotlist=ps, cols=cols)
-    }
-
-}
-
-
-go_genes = function(seur, genes, ontology='BP'){
-
-    require(topGO)
-    all_genes = rownames(seur@data)
-    GO2genes = readMappings(file='~/aviv/db/gopca/go.test.txt', sep='\t')
-    gene_list = as.numeric(all_genes %in% genes)
-    names(gene_list) = all_genes
-    gene_list = factor(gene_list)
+    # Sort and select top markers
+    i = order(markers[,contrast], with(sort.by, markers))
+    markers = markers[i]
+    if(!is.null(top)){markers = markers[,.SD[1:min(.N, top)],.(contrast)]}
     
-    # Run topGO tests
-    GOdata = new('topGOdata', ontology=ontology, allGenes=gene_list, annot=annFUN.GO2genes, GO2genes=GO2genes)
-    res = runTest(GOdata, algorithm='classic', statistic='ks')
-    res = GenTable(GOdata, res, topNodes=min(1000, length(res@score)))
-    res = res[res$result1 <= .05,]
-    return(res)
-}
-
-
-go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1){
-
-    require(topGO)
-    require(naturalsort)
-    GO2genes = readMappings(file='~/aviv/db/gopca/go.test.txt', sep='\t')
+    # Split markers by contrast
+    if(split == TRUE){markers = split(markers, markers$contrast)}
     
-    # Ontology can be: BP (biological process), MF (molecular function), or CC (cellular component)
-
-    # Get column names
-    if('contrast' %in% colnames(m)){
-	score = 'pval'
-	cluster = 'contrast'
-	m = m[m$log2fc > 0,]
-    } else {
-	score = 'auc'
-	cluster = 'cluster'
-	m = m[m$auc > .5,]
-    }
-    
-    # Test each cluster
-    all_genes = unique(m$gene)
-    clusters = naturalsort(as.character(unique(m[,cluster])))
-    
-    go_terms = run_parallel(foreach(a=clusters, .packages=c('topGO')) %dopar% {
-
-        # Filter marker genes
-        mi = m[m[,cluster] == a,]
-	if(!is.null(top)){
-	    print('Using top genes')
-	    mi = mi[1:top,]
-	}
-	if(!is.null(pval)){
-	    print('Filtering by pval')
-	    mi = mi[mi$pval <= pval,]
-	}
-	if(!is.null(auc)){
-	    print('Filtering by AUC')
-	    mi = mi[mi$auc <= auc,]
-	}
-	
-	# Construct gene list
-	gene_list = as.numeric(all_genes %in% mi$gene)
-	names(gene_list) = all_genes
-	gene_list = factor(gene_list)
-
-	# Run topGO tests
-	GOdata = new('topGOdata', ontology=ontology, allGenes=gene_list, annot=annFUN.GO2genes, GO2genes=GO2genes)
-	res = runTest(GOdata, algorithm='classic', statistic='ks')
-	res = GenTable(GOdata, res, topNodes=min(1000, length(res@score)))
-	res = res[res$result1 <= .05,]
-	return(res)
-    }, n.cores=n.cores)
-    
-    names(go_terms) = clusters
-    return(go_terms)
-}
-
-update_signatures = function(seur){    
-    
-    # Predict host (human or mouse)
-    genes = rownames(seur@data)
-    
-    # Calculate signatures
-    seur@data.info = cbind(seur@data.info, get_scores(seur, file='cell_cycle'))
-    seur@data.info = cbind(seur@data.info, get_scores(seur, file='early'))
-    seur@data.info$nGene = colSums(seur@data > 0)
-    
-    return(seur)
-}
-
-marker_table = function(mlist, pval=1, padj=1, top=100){
-    mlist$padj = p.adjust(mlist$pval, method='fdr')
-    if(! 'cluster' %in% colnames(mlist)){
-    	 print('Could not find cluster column in marker list')
-    	 if('contrast' %in% colnames(mlist)){
-	     print('Using contrast column instead')
-	     mlist$cluster = mlist$contrast
-	 } else {stop()}
-    }
-    mlist = mlist[mlist$pval <= pval & mlist$padj <= padj,]
-    mlist = mlist[order(mlist$cluster, mlist$pval),]
-    mtab = tapply(mlist$gene, list(mlist$cluster), function(a){
-        as.character(a[1:top])
-    })    
-    mtab = sapply(mtab, function(a){if(!is.null(a)){a}})    
-    return(mtab)
+    return(markers)
 }

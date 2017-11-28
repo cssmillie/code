@@ -9,6 +9,8 @@ load_scran = function(){
 
 batch_correct = function(seur, batch, design=NULL, method='combat', genes.use='var'){
 
+    # note: design matrix does not include batch
+    
     # Get genes.use
     if(genes.use == 'all'){
         print('Running batch correction on all genes')
@@ -32,6 +34,7 @@ batch_correct = function(seur, batch, design=NULL, method='combat', genes.use='v
 	} else {
 	    print(sprintf('Fixing batches while controlling for %d covariates', ncol(design)-1))
 	    model = model.matrix(~ ., data=design)
+	    print(dim(model))
 	    new.data = ComBat(dat=as.matrix(seur@data), batch=batch, mod=model, par.prior=T, prior.plots=F)
 	}	
     }

@@ -9,7 +9,7 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
     u = u[i]
     v = v[i]
     cv = sqrt(v)/u
-
+    
     # fit loess curve
     l = loess(log(cv) ~ log(u), family='symmetric')
     d = log(cv) - l$fitted
@@ -60,10 +60,10 @@ get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1
     print(table(ident))
     
     var_genes = sapply(levels(ident), function(i){print(i)
-
+    
             # Start plotting device
 	    if(!is.null(prefix)){png(paste(prefix, i, 'png', sep='.'), w=1000, h=800)}
-
+	    
 	    # Subsample data
 	    data = data[,ident == i]
 	    if(do.tpm){data = calc_tpm(data=data)}
@@ -93,6 +93,7 @@ get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1
     
     if(do.flatten == TRUE){
         a = sort(table(as.character(unlist(var_genes))), decreasing=T)
+	num_genes = min(length(a), num_genes)
 	k = a[num_genes]
 	u = names(a)[a > k]
 	v = sample(names(a)[a == k], num_genes - length(u))
@@ -151,14 +152,15 @@ meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=N
     }
     print(pass.cutoff)
     if(do.plot == T){
-    plot(mean_emp,cv_emp,pch=16,cex=0.5,col="black",xlab="Mean Counts",ylab="CV (counts)", log="xy", main = main.use)
-    if (do.spike) points(mean_emp[spike.genes],cv_emp[spike.genes],pch=16,cex=0.5,col="red")
-    curve(sqrt(1/x), add=TRUE, col="red", log="xy", lty=2, lwd=2)
-    or = order(mean_NB)
-    lines(mean_NB[or], cv_NB[or], col="magenta", lwd=2)
-    if(do.text) text(mean_emp[pass.cutoff],cv_emp[pass.cutoff],pass.cutoff,cex=cex.text.use)
-    hist(diffCV, 50, probability=TRUE, xlab="diffCV")
-    par(mfrow=c(1,1))
+        plot(mean_emp,cv_emp,pch=16,cex=0.5,col="black",xlab="Mean Counts",ylab="CV (counts)", log="xy", main = main.use)
+        if (do.spike) points(mean_emp[spike.genes],cv_emp[spike.genes],pch=16,cex=0.5,col="red")
+        curve(sqrt(1/x), add=TRUE, col="red", log="xy", lty=2, lwd=2)
+        or = order(mean_NB)
+        lines(mean_NB[or], cv_NB[or], col="magenta", lwd=2)
+        if(do.text) text(mean_emp[pass.cutoff],cv_emp[pass.cutoff],pass.cutoff,cex=cex.text.use)
+        points(mean_emp[pass.cutoff], cv_emp[pass.cutoff], pch=16,cex=0.5,col="red")
+        hist(diffCV, 50, probability=TRUE, xlab="diffCV")
+        par(mfrow=c(1,1))
     }
     
     return(as.character(pass.cutoff))

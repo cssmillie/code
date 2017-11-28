@@ -56,7 +56,7 @@ flatten_keys = function(map, keys){
 }
 
 
-load_anno = function(fn='~/Gut_Human/csmillie/anno/tree_annotations.txt', key='ident', value='name'){
+load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', value='name'){
     x = load_map(fn, key, value)
 }
     
