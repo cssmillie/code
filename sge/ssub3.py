@@ -179,7 +179,7 @@ class Submitter():
         self.stat_cmd = 'qstat -g d -u %s | egrep -v "^job|^-"' %(','.join(self.users + [self.me]))
         self.submit_cmd = 'qsub'
         self.parse_job = lambda x: re.search('Your job-array (\d+)', x).group(1)
-        
+
         # initialize job objects
         for command in args.commands:
             self.add_task(command)
@@ -223,7 +223,9 @@ class Submitter():
         
         # submit job
         cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, task_ids, self.P, array)
+        print cmd
         out = self.system(cmd, user=u)
+        print out
         
         # update tasks
         job_id = self.parse_job(out)
@@ -362,10 +364,10 @@ class Submitter():
             if self.g == True:
                 groups = self.group_tasks_by_resources(tasks)
             else:
-                groups = [[task] for task in tasks]
+                groups = dict(zip(range(len(tasks)), [[task] for task in tasks]))
             
             # submit each resource group
-            for tasks in groups:
+            for tasks in groups.values():
                 self.writer.write_error(tasks=tasks)
                 self.qsub(tasks)
             

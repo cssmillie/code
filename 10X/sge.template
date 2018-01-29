@@ -30,7 +30,7 @@
 #$ -o __MRO_STDOUT__
 #$ -e __MRO_STDERR__
 #$ -l h_vmem=__MRO_MEM_GB_PER_THREAD__G
-#$ -l h_rt=12:00:00
+#$ -l h_rt=6:00:00
 #$ -R y
 #$ -S "/usr/bin/env bash"
 

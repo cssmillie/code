@@ -34,33 +34,38 @@ load_signature = function(file=NULL){
 }
 
 
-get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, combine='mean', cells.use=NULL, group_by=NULL){
+get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, cells.use=NULL, group_by=NULL, type='mean', do.log2=TRUE){
+    
+    # Score gene expression for every cell (type = alpha, mu, or mean)
     
     # Map variables
-    genes = feats = c()
+    genes = feats = gene_scores = feat_scores = c()
     names = as.list(names)
     regex = as.list(regex)
     if(is.null(data) & !is.null(seur)){data = seur@data}
     if(is.null(meta) & !is.null(seur)){meta = seur@data.info}
     
-    # Subset data
+    # Fix input data
+    if(!is.null(scores)){scores = as.data.frame(scores)}
+    if(!is.null(group_by)){names(group_by) = colnames(seur@data)}
+    
+    # Subset cells
     if(!is.null(cells.use)){
         data = data[,cells.use]
 	meta = meta[cells.use,]
-	if(!is.null(group_by)){
-	    names(group_by) = colnames(seur@data)
-	    group_by = group_by[cells.use]
-	}
+	if(!is.null(group_by)){group_by = group_by[cells.use]}
+	if(!is.null(scores)){scores = scores[cells.use,,drop=F]}
     }
     
-    # Get names
+    # Get genes and feats
     if(length(names) > 0){
-        genes = sapply(names, function(a) unique(map_gene(a, target=predict_organism(rownames(data)[1:100]))))
-        genes = genes[sapply(genes, function(a) all(a %in% rownames(data)))]
-	feats = names[sapply(names, function(a) all(a %in% colnames(meta)))]
+        org = predict_organism(rownames(data)[1:100])
+        genes = sapply(names, function(a) unique(map_gene(a, target=org)), simplify=F)
+	genes = sapply(genes, function(a) a[a %in% rownames(data)])
+	feats = sapply(names, function(a) a[a %in% colnames(meta)])
     }
-
-    # Map regex
+    
+    # Add regex terms
     if(length(regex) > 0){
         genes = c(genes, structure(sapply(regex, function(a) grep(a, rownames(data), value=T), simplify=F), names=regex))
 	feats = c(feats, structure(sapply(regex, function(a) grep(a, colnames(meta), value=T), simplify=F), names=regex))
@@ -68,21 +73,12 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
     
     # Convert to named lists
     if(length(genes) > 0){
-        ni = sapply(genes, function(a) paste(a, collapse='.'))
-        if(is.null(names(genes))){
-	    genes = structure(genes, names=ni)
-	} else {
-	    genes = structure(genes, names=ifelse(names(genes) == '', ni, names(genes)))
-	}
-    }
-    
+        if(is.null(names(genes))){names(genes) = rep('', length(genes))}
+	names(genes) = ifelse(names(genes) == '', sapply(genes, function(a) paste(a, collapse='.')), names(genes))
+    }    
     if(length(feats) > 0){
-        ni = sapply(feats, function(a) paste(a, collapse='.'))
-	if(is.null(names(feats))){
-	    feats = structure(feats, names=ni)
-	} else {
-	    feats = structure(feats, names=ifelse(names(feats) == '', ni, names(feats)))
-	}
+        if(is.null(names(feats))){names(feats) = rep('', length(feats))}
+	names(feats) = ifelse(names(feats) == '', sapply(feats, function(a) paste(a, collapse='.')), names(feats))
     }
     
     # Load signatures from file
@@ -109,50 +105,53 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
 	# Calculate TPM
 	data = calc_tpm(data=data, genes.use=unique(na.omit(as.character(unlist(genes)))))
 	
-	# Score modules
+	# Score cells
 	si = sapply(genes, function(a){
             i = intersect(rownames(data), a)
             colMeans(as.matrix(data[i,,drop=F]), na.rm=T)
         })
+
+	# Convert to alpha, mu, or mean
+	if(type == 'alpha'){si = si > 0}
+	if(type == 'mu'){si[si == 0] = NA}
+	if(do.log2 == TRUE & type %in% c('mu', 'mean')){si = log2(si + 1)}
 	
-    	# Log transform
-	if(length(scores) > 0){
-    	    scores = cbind.data.frame(scores, log2(si + 1))
-	} else {
-	    scores = log2(si + 1)
-	}
+	scores = cbind(scores, si)
     }
+    
     if(length(feats) > 0){
-        if(length(scores) > 0){
-	    scores = cbind.data.frame(scores, lapply(feats, function(a) meta[,a,drop=F]))
+        si = as.data.frame(lapply(feats, function(a) meta[,a,drop=F]))
+	if(is.null(scores)){
+	    scores = si
 	} else {
-	    scores = as.data.frame(lapply(feats, function(a) meta[,a,drop=F]))
+	    scores = cbind.data.frame(scores, si)
 	}
     }
     
     # Group scores
     if(!is.null(group_by)){
-        scores = t(data.frame(aggregate(scores, list(as.character(group_by)), mean), row.names=1))
+        scores = data.frame(aggregate(scores, list(as.character(group_by)), mean, na.rm=T), row.names=1)
+	if(nrow(scores) == nlevels(group_by)){
+	    scores = scores[levels(group_by),,drop=F]
+	}
     }
     
     return(scores)
 }
 
 
-plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, combine='mean',
-                     ident=TRUE, cells.use=NULL, ymin=0, ymax=1, num_col='auto', pt.size=.75, font.size=11, label.size=5,
-	             do.label=T, do.title=TRUE, do.legend=TRUE, na.value='transparent', legend.title='log2(TPM)', out=NULL, nrow=1.5, ncol=1.5, ...){
+plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, type='mean', ident=TRUE,
+                     cells.use=NULL, ymin=0, ymax=1, num_col='auto', pt.size=.75, font.size=11, do.label=T, label.size=5, do.title=TRUE, title.use=NULL,
+	             do.legend=TRUE, legend.title='log2(TPM)', share_legend=FALSE, legend_width=.05, vmin=NA, vmax=NA, na.value='transparent',
+		     out=NULL, nrow=1.5, ncol=1.5, ...){
     
-    # Cell scores
-    scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, combine=combine)
     
-    # Get xy coordinates
+    # TSNE coordinates
     if(is.null(coords)){
         d = structure(seur@tsne.rot[,1:2], names=c('x', 'y'))
     } else {
         d = structure(as.data.frame(coords[,1:2]), names=c('x', 'y'))
     }
-    ps = list()
     
     # Cell identities
     if(!is.logical(ident)){
@@ -160,26 +159,40 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     } else if(ident & !is.null(seur)){
         d$Identity = seur@ident
     }
+
+    # Subset cells
+    if(is.null(cells.use)){cells.use = rownames(d)}
+    d = data.frame(d[cells.use,])
     
     # Cell scores
+    scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, type=type, cells.use=cells.use)
     if(!is.null(scores)){d = cbind.data.frame(d, scores)}
     
-    # Subset cells
-    if(!is.null(cells.use)){d = d[cells.use,]}
-    d = data.frame(d)
+    # Initialize plotlist
+    cat('\nPlotting:', paste(colnames(subset(d, select=-c(x,y))), collapse=', '), '\n')
+    ps = list()
+    
+    # Get limits for shared legend
+    if(share_legend == TRUE){
+        j = names(which(sapply(subset(d, select=-c(x,y)), is.numeric)))
+	cat('\nShared limits:', paste(j, collapse=', '), '\n')
+        if(is.na(vmin)){vmin = na.omit(min(d[,j]))}
+	if(is.na(vmax)){vmax = na.omit(max(d[,j]))}
+	cat('> vmin =', vmin, '\n> vmax =', vmax, '\n')
+    }
     
     for(col in setdiff(colnames(d), c('x', 'y'))){
-	
+    	
 	if(is.numeric(d[,col])){
-	    
+		    
 	    # Continuous plot
 	    d[,col] = qtrim(d[,col], qmin=ymin, qmax=ymax)
 	    p = ggplot(d) +
 	        geom_point(aes_string(x='x',y='y',colour=col), size=pt.size, ...) +
-		scale_colour_gradientn(colours=material.heat(50), guide=guide_colourbar(barwidth=.5, title=legend.title), na.value=na.value) + 
+		scale_colour_gradientn(colours=material.heat(50), guide=guide_colourbar(barwidth=.5, title=legend.title), na.value=na.value, limits=c(vmin, vmax)) + 
 		theme_cowplot(font_size=font.size) +
 		xlab('TSNE 1') + ylab('TSNE 2')
-
+		
 	} else {
 	    
 	    # Discrete plot
@@ -197,8 +210,10 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 		p = p + geom_text_repel(data=t, aes(x=x, y=y, label=l, lineheight=.8), point.padding=NA, size=label.size, family='Helvetica') + theme(legend.position='none')
 	    }
 	}
+	
 	if(do.title == TRUE){
-	    p = p + ggtitle(col)
+	    if(is.null(title.use)){title = col} else {title = title.use}
+	    p = p + ggtitle(title)
 	}
 	if(do.legend == FALSE){
 	    p = p + theme(legend.position='none')
@@ -209,7 +224,16 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     if(num_col == 'auto'){
         num_col = ceiling(sqrt(length(ps)))
     }
-    p = plot_grid(plotlist=ps, ncol=num_col)
+    
+    ps = make_compact(plotlist=ps, num_col=num_col)
+    if(length(ps) > 1){
+        if(share_legend == TRUE){
+            p = share_legend(ps, num_col=num_col, width=legend_width)
+        } else {
+            p = plot_grid(plotlist=ps, ncol=num_col, align='h')
+        }
+    }
+    
     if(is.null(out)){
         p
     } else {
@@ -218,38 +242,150 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 }
 
 
-plot_heatmap = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, combine='mean', group_by=NULL,
-                        cells.use=NULL, do.scale=TRUE, border_color='black', Rowv=TRUE, Colv=TRUE, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, out=NA, ...){
+make_compact = function(plotlist, num_col, labels=TRUE, ticks=TRUE){
+    
+    # Make a "plot_grid" plotlist compact by removing axes from interior plots
+
+    # x-axis
+    if(length(plotlist) > num_col){
+        i = setdiff(1:length(plotlist), rev(1:length(plotlist))[1:min(num_col, length(plotlist))])
+	if(labels == TRUE){plotlist[i] = lapply(plotlist[i], function(p) p + theme(axis.title.x=element_blank()))}
+	if(ticks == TRUE){plotlist[i] = lapply(plotlist[i], function(p) p + theme(axis.text.x=element_blank()))}
+    }
+    
+    # y-axis
+    if(num_col > 1){
+        i = setdiff(1:length(plotlist), which(1:length(plotlist) %% num_col == 1))
+	if(labels == TRUE){plotlist[i] = lapply(plotlist[i], function(p) p + theme(axis.title.y=element_blank()))}
+	if(ticks == TRUE){plotlist[i] = lapply(plotlist[i], function(p) p + theme(axis.text.y=element_blank()))}
+    }
+    
+    return(plotlist)
+}
+
+
+share_legend = function(plotlist, num_col, width=0.05){
+    
+    # Get first legend in plotlist
+    i = min(which(sapply(plotlist, function(p) 'guide-box' %in% ggplotGrob(p)$layout$name)))
+    cat(paste('\nUsing shared legend:', names(plotlist)[i], '\n'))
+    legend = get_legend(plotlist[[i]])
+    
+    # Remove all legends
+    plotlist = lapply(plotlist, function(p) p + theme(legend.position='none'))
+    
+    # Make combined plot
+    p = plot_grid(plotlist=plotlist, ncol=num_col, align='h')
+    p = plot_grid(p, legend, ncol=2, rel_widths=c(1-width, width))
+    
+    return(p)
+}
+
+
+plot_heatmap = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, type='mean', group_by=NULL,
+                        cells.use=NULL, do.scale=FALSE, scale_method='max', border='black', Rowv=TRUE, Colv=TRUE, labRow=NULL, labCol=NULL, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, out=NA, ...){
     
     require(NMF)
     
     # Cell scores
     if(is.null(group_by)){group_by = seur@ident}
-    data = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, combine=combine, cells.use=cells.use, group_by=group_by)
+    data = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, type=type, cells.use=cells.use, group_by=group_by)
     
     # Scale data
     if(do.scale == TRUE){
-        data = t(scale(t(data)))
+        if(scale_method == 'max'){
+	    data = as.data.frame(t(t(data)/apply(data, 2, max)))
+	} else {
+	    data = scale(data)
+	}
     }
     
     # Adjust scale
     data = qtrim(data, qmin=qmin, qmax=qmax, vmin=vmin, vmax=vmax)
     
-    # Cluster columns
-    d = hclust(dist(t(data), method='euclidean'), method='average')
-    data = data[,rev(d$order)]
-    
     # Re-order rows
     i = order(apply(data, 1, which.max))
-    data = data[i,]
+    data = data[i,,drop=F]
     
     # Plot heatmap
-    aheatmap(data, scale='none', border_color=border_color, Rowv=Rowv, Colv=Colv, hclustfun='average', filename=out, gp=gpar(lineheight=.8))
+    if(ncol(data) == 1){Colv=NA}
+    aheatmap(data, scale='none', border_color=border, Rowv=Rowv, Colv=Colv, labRow=labRow, labCol=labCol, hclustfun='average', filename=out, gp=gpar(lineheight=.8), ...)
 }
 
 
-plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, combine='mean', group_by=NULL, color_by=NULL, pt.size=.25,
-	               do.facet=FALSE, facet_by=NULL, ymin=0, ymax=1, do.scale=FALSE,
+heatmap2 = function(x, col='nmf', lmat=NULL, lwid=NULL, lhei=NULL, margins=c(5,5), rowSize=1, colSize=1, show.tree=TRUE, ...){
+    library(gplots)
+
+    # Make gplots heatmap.2 look like aheatmap
+    
+    # Adjust layout
+    if(is.null(lmat)){lmat=matrix(c(0,2,3,1,4,0), nrow=2)}
+    if(is.null(lwid)){lwid=c(.05,.9,.05)}
+    if(is.null(lhei)){lhei=c(.05,.95)}
+
+    # Label sizes
+    cexRow = rowSize*(0.2 + 1/log10(nrow(x)))
+    cexCol = colSize*(0.2 + 1/log10(ncol(x)))
+    
+    # NMF colors
+    if(col == 'nmf'){col = colorRampPalette(nmf.colors)(100)} else {col = colorRampPalette(brewer.pal(9, col))(100)}
+
+    # Hide dendrogram
+    if(show.tree == FALSE){dendrogram='none'} else {dendrogram='both'}
+    
+    # Plot data
+    heatmap.2(x, trace='none', lmat=lmat, lhei=lhei, lwid=lwid, col=col, cexRow=cexRow, cexCol=cexCol, dendrogram=dendrogram, ...)
+}
+
+
+plot_dots = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, group_by=NULL, cells.use=NULL, dot_size='alpha', dot_color='mu',
+	             rescale=FALSE, reorder=NULL, do.title=TRUE, do.legend=TRUE, xlab='Cell Type', ylab='Gene', out=NULL, nrow=1.5, ncol=1.5, coord_flip=FALSE, max_size=5){
+
+    require(tibble)
+    
+    # Fix input arguments
+    if(is.null(group_by)){group_by = seur@ident}
+    if(is.null(cells.use)){cells.use = colnames(seur@data)}
+    
+    # Scores
+    x = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, file.cols=file.cols, top=top, cells.use=cells.use, group_by=group_by, type=dot_size)
+    y = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, file.cols=file.cols, top=top, cells.use=cells.use, group_by=group_by, type=dot_color)
+    
+    # Rescale
+    if(rescale == TRUE){
+        x.max = apply(x, 2, max, na.rm=T)
+	y.max = apply(y, 2, max, na.rm=T)
+	x = as.data.frame(t(t(x)/x.max))
+	y = as.data.frame(t(t(y)/y.max))
+    }
+    
+    # Gather
+    x = x %>% rownames_to_column('Group') %>% gather(Feature, Size, -Group)
+    y = y %>% rownames_to_column('Group') %>% gather(Feature, Color, -Group)
+    d = cbind(x, y)
+    
+    # Legend titles
+    uppercase = function(x){paste0(toupper(substr(x,1,1)), substr(x,2,nchar(x)))}
+    
+    # Re-order data
+    if(!is.null(reorder)){if(coord_flip == TRUE){d$Group = factor(d$Group, levels=rev(reorder))} else {d$Group = factor(d$Group, levels=reorder)}}
+    
+    # Dot plot
+    p = ggplot(d, aes(x=Group, y=Feature, size=Size, colour=Color)) +
+        geom_point() +
+	scale_size_area(uppercase(dot_size), max_size=max_size) +
+	scale_colour_gradientn(uppercase(dot_color), colours=brewer.pal(9,'YlOrRd')) +
+	theme(axis.line = element_blank(), axis.title=element_blank(), panel.grid.major=element_line(colour='black')) +
+	background_grid(major='y')
+    
+    if(coord_flip == TRUE){p = p + coord_flip()}
+    
+    return(p)
+}
+
+
+plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, type='mean', group_by=NULL, color_by=NULL, pt.size=.25,
+	               do.facet=FALSE, facet_by=NULL, facet_scales='free_y', ymin=0, ymax=1, do.scale=FALSE,
                        ident=TRUE, cells.use=NULL, do.title=TRUE, do.legend=FALSE, xlab='Cell Type', ylab='log2(TPM)', out=NULL, nrow=1.5, ncol=1.5, legend.title='Group',
 		       coord_flip=FALSE, alpha=.5){
     
@@ -277,7 +413,7 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
     if(coord_flip == TRUE){d$Group = factor(d$Group, levels=rev(levels(d$Group)))}
     
     # Cell scores
-    scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, combine=combine, cells.use=cells.use)
+    scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, type=type, cells.use=cells.use)
     scores = scores[cells.use,,drop=F]
     d = cbind.data.frame(d, scores)
     
@@ -290,14 +426,14 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
     
     # Facet data
     if(do.facet == TRUE){
-        d = gather(d, Feature, Value, -Group, -Color, -Facet)
+	d = gather(d, Feature, Value, -Group, -Color, -Facet)
     }
     
     # Violin plots
     for(col in setdiff(colnames(d), c('Group', 'Color', 'Facet', 'Value'))){
 
         # Convert to numeric?
-	d[,col] = as.numeric(d[,col])
+	if(!is.character(d[,col])){d[,col] = as.numeric(d[,col])}
         
         # Facet if necessary
         if(do.facet == TRUE){
@@ -310,7 +446,7 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	p = p +
 	    geom_point(position=position_jitterdodge(dodge.width=0.6, jitter.width=2.5), size=pt.size, show.legend=F) +
 	    geom_violin(scale='width', alpha=alpha) +
-	    scale_fill_manual(values=set.colors) + theme_cowplot() +
+	    scale_fill_manual(values=rev(set.colors)) + theme_cowplot() +
 	    xlab(xlab) + ylab(ylab) + labs(fill=legend.title) +
 	    stat_summary(fun.y=mean, fun.ymin=mean, fun.ymax=mean, geom='crossbar', width=.5, show.legend=F) +
 	    theme(axis.text.x = element_text(angle = 45, hjust = 1))
@@ -328,7 +464,7 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	}
 
 	if(facet_formula != '~ .'){
-	    p = p + facet_grid(as.formula(facet_formula))
+	    p = p + facet_grid(as.formula(facet_formula), scales=facet_scales)
 	}
 	
 	ps[[col]] = p
@@ -341,8 +477,6 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
         save_plot(file=out, p, nrow=nrow, ncol=ncol)
     }
 }
-
-
 
 
 plot_feats = function(...){plot_tsne(...)}
@@ -360,7 +494,8 @@ plot_clusters = function(seur, ...){
 }
 
 
-matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Frequency', error='se', legend.title='Groups', palette='Paired', out=NULL, nrow=1.5, ncol=1.5, coord_flip=FALSE){
+matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Frequency', value='mean', error='se', legend.title='Groups', colors='Paired',
+                          out=NULL, nrow=1.5, ncol=1.5, coord_flip=FALSE, sig_only=F, do.facet=F){
     
     # Plot barplot of [M x N] matrix
     # x-axis = matrix columns (e.g. cell types)
@@ -369,7 +504,7 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
     
     # Arguments:
     # group.by = the group of each row
-    # pvals = named list of p-values for each column
+    # pvals = [G x N] matrix of p-values for each group and column
     # error = sd, se, or none
     
     require(tidyverse)
@@ -378,44 +513,77 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
 
     # Groups (default = rows)
     if(is.null(group_by)){group_by = rownames(data)}
+    group_by = as.factor(group_by)
+
+    # Select significant comparisons
+    if(!is.null(pvals)){
+        if(sum(! rownames(pvals) %in% group_by) > 0){stop('rownames(pvals) != group_by')}
+	if(sum(! colnames(pvals) %in% colnames(data)) > 0){stop('colnames(pvals) != colnames(data)')}
+	if(sig_only == TRUE){
+	    j = apply(pvals, 2, min) <= .05
+	    data = data[,j]
+	    pvals = pvals[,j]
+	}
+    }
     
     # Construct input data
     names = colnames(data)
-    data = data.frame(groups=group_by, data)
+    data = data.frame(group=group_by, data)
+    group_levels = levels(group_by)
     colnames(data)[2:ncol(data)] = names
-    data = as.data.table(gather_(data, 'x', 'y', setdiff(colnames(data), 'groups')))
+    data = as.data.table(gather_(data, 'x', 'y', setdiff(colnames(data), 'group')))
+    
+    # Value function
+    if(value == 'mean'){vf = mean} else if(value == 'median'){vf = median} else {stop()}
     
     # Error function
-    se = function(x){sd(x)/sqrt(length(x))}    
+    se = function(x, na.rm=T){sd(x, na.rm=na.rm)/sqrt(length(x))}    
     if(error == 'sd'){ef = sd} else if(error == 'se'){ef = se} else {ef = function(x){0}}
 
     # Estimate error bars
-    data = data[,.(u=mean(y), s=ef(y)),.(groups, x)]
+    data = data[,.(u=vf(y, na.rm=T), s=ef(y, na.rm=T)),.(group, x)]
     data$x = factor(data$x, levels=names)
     
-    # Plot data
-    p = ggplot(data) +
-    geom_bar(aes(x=x, y=u, fill=groups), stat='identity', position=position_dodge(.9)) +
-    geom_errorbar(aes(x=x, ymin=u-s, ymax=u+s, fill=groups), stat='identity', position=position_dodge(.9), width=.25) +
-    scale_fill_manual(values=set.colors, name=legend.title) + xlab(xlab) + ylab(ylab)
-    
-    # P-values
+    # Add p-values
     if(!is.null(pvals)){
-        pvals = as.data.frame(pvals) %>% rownames_to_column('x')
-        pvals$label = ifelse(pvals$pvals <= .001, '***', ifelse(pvals$pvals <= .01, '**', ifelse(pvals$pvals <= .05, '*', '')))
-        pvals$pos = -.025*max(data$u)
-        p = p + geom_text(data=pvals, aes(x=x, y=pos, label=label), hjust='center', vjust='center', size=4, angle=0, nudge_x=-.1)
+        pvals = as.data.frame(pvals) %>% rownames_to_column('group') %>% gather(x, pval, -group) %>% as.data.table()
+	setkeyv(data, c('x', 'group'))
+	setkeyv(pvals, c('x', 'group'))
+	data = merge(data, pvals, all=T)
+	data$label = ifelse(data$pval <= .001, '***', ifelse(data$pval <= .01, '**', ifelse(data$pval <= .05, '*', '')))
     }
+    data$group = factor(data$group, levels=group_levels)
+
+    # Get colors
+    if(length(colors) == 1){colors = brewer.pal(9, colors)}
     
-    if(coord_flip == TRUE){p = p + coord_flip()}
+    # Plot data
+    p = ggplot(data) + 
+    geom_bar(aes(x=x, y=u, fill=group), stat='identity', position=position_dodge(.9)) +
+    geom_errorbar(aes(x=x, ymin=u-s, ymax=u+s, fill=group), stat='identity', position=position_dodge(.9), width=.25) +
+    scale_fill_manual(values=colors, name=legend.title) + xlab(xlab) + ylab(ylab)
     
+    # Facet wrap
+    if(do.facet == TRUE){
+        p = p + facet_grid(group ~ ., scales='free')
+    }
+
+    dy = max(data$u + data$s)*.01
+    if(coord_flip == FALSE){
+        p = p + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+	if(!is.null(pvals)){p = p + geom_text(aes(x=x, y=u+s+dy, label=label, group=group), hjust='center', vjust=0, size=4, angle=0, position=position_dodge(.9))}
+    } else {
+        p = p + coord_flip()
+	if(!is.null(pvals)){p = p + geom_text(aes(x=x, y=u+s+dy, label=label, group=group), hjust='center', vjust=1, size=4, angle=90, position=position_dodge(.9))}
+    }
+        
     # Save plot
     if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}
     p
 }
 
 
-plot_volcano = function(fcs, pvals, color_by=NULL, facet_by=NULL, labels=NULL, lab.x=c(-2.5, 2.5), lab.pval=0, lab.n=0, font.size=11, legend.title='Groups', out=NULL, nrow=1.5, ncol=1.5,
+plot_volcano = function(fcs, pvals, color_by=NULL, facet_by=NULL, labels=NULL, lab.x=c(-2.5, 2.5), lab.nox=c(-1,1), lab.pval=0, lab.n=0, font.size=11, legend.title='Groups', out=NULL, nrow=1.5, ncol=1.5,
                         xlab='Fold change', ylab='-log10(pval)'){
 
     # Create a volcano plot using supplied p-values and fold-changes
@@ -443,6 +611,10 @@ plot_volcano = function(fcs, pvals, color_by=NULL, facet_by=NULL, labels=NULL, l
 	    u = sort(unname(unlist(tapply(1:nrow(data[i,]), cut(data[i,]$x, lab.n), function(j) j[which.max(data[i,]$y[j])]))))
 	    data[i[u], 'labels'] = TRUE
 	}
+
+	# Remove labels
+	data$labels[lab.nox[[1]] < data$x & data$x < lab.nox[[2]]] = FALSE
+		
     } else {
         data$labels = FALSE
     }	

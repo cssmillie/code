@@ -1,11 +1,11 @@
 #!/bin/sh
 #$ -cwd
-#$ -q long
 #$ -P regevlab
 #$ -N run10X
 #$ -l h_vmem=4g
 #$ -e run.error
 #$ -o run.log
+#$ -l h_rt=24:00:00
 #$ -t 1-NUM
 
 source /broad/software/scripts/useuse

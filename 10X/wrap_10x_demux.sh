@@ -1,11 +1,11 @@
 #! /bin/bash
 
 #$ -cwd
-#$ -q long
 #$ -P regevlab
 #$ -l h_vmem=4g
 #$ -e demux.err
 #$ -o demux.log
+#$ -l h_rt=24:00:00
 
 source /broad/software/scripts/useuse 
 reuse -q .bcl2fastq2-2.17.1.14

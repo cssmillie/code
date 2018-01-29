@@ -19,7 +19,7 @@ load_map = function(fn, key, value){
     # Aggregate by key
     x = data.frame(aggregate(v ~ k, x, function(a){c(as.character(a))}), row.names=1, stringsAsFactors=F)
     x = structure(x[,1], names=rownames(x))
-
+    
     # Return a named list of keys -> values
     return(x)
 }
@@ -56,7 +56,26 @@ flatten_keys = function(map, keys){
 }
 
 
-load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', value='name'){
+load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', value='name', fix=c('description')){
+    
+    # Load annotation map
     x = load_map(fn, key, value)
+    
+    # Reformat text
+    fix_text = function(a){
+        a = gsub('\\\\n', '\n', a)
+	a = gsub('_', ' ', a)
+	a
+    }
+    
+    if(key %in% fix){
+        names(x) = fix_text(names(x))
+    }
+    
+    if(value %in% fix){
+        x = sapply(x, fix_text)
+    }
+    
+    return(x)
 }
     

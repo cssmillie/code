@@ -60,13 +60,22 @@ get_data = function(seur, data.use='tpm', tpm=NULL, cells.use=NULL){
 
 select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_cells=NULL){
     
-    # Select cells from covariates matrix using cells.use and max_cells
+    # Select cells from groups defined by covariates matrix
+    # -----------------------------------------------------
+    # 1. select cells.use
+    # 2. build groups from covariates matrix
+    # 3. select max_cells from each group
+    # 4. sample evenly across batch.use
+        
     cat('\nSelecting cells\n')
     
-    # Remove cells with missing data
-    cells = rownames(covariates)[apply(covariates, 1, function(a) !any(is.na(a)))]
+    # Subset data
+    i = apply(covariates, 1, function(a) !any(is.na(a)))
+    covariates = covariates[i,,drop=F]
+    batch.use = batch.use[i]
     
-    # Intersect cells with cells.use
+    # Get cells to use
+    cells = rownames(covariates)
     if(!is.null(cells.use)){
         cells = intersect(cells, cells.use)
     }
@@ -100,7 +109,7 @@ select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_ce
 select_genes = function(seur, stats, genes.use=NULL, min_cells=3, min_alpha=.025, min_fc=1.2, dir='both'){
 
     # Select genes from Seurat object by cells, genes.use, min_cells, min_alpha, and min_fc
-
+    
     # Select genes by genes.use
     if(is.null(genes.use)){genes.use = rownames(seur@data)}
     
@@ -139,7 +148,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
     }
     
     # Select genes
-    if(!is.null(genes.use)){tpm = tpm[genes.use,]}
+    if(!is.null(genes.use)){tpm = tpm[genes.use,,drop=F]}
     total = rowSums(tpm)
     
     # Model matrix
@@ -162,12 +171,12 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	ref = refs[[a]]
 	
 	# number of expressing cells
-	n1 = rowSums(tpm[,i] > 0)
-	n2 = rowSums(tpm[,j] > 0)
+	n1 = rowSums(tpm[,i,drop=F] > 0)
+	n2 = rowSums(tpm[,j,drop=F] > 0)
 	
 	# total expression over all cells
-	s1 = rowSums(tpm[,i])
-	s2 = rowSums(tpm[,j])
+	s1 = rowSums(tpm[,i,drop=F])
+	s2 = rowSums(tpm[,j,drop=F])
 	
 	# fraction of expressing cells (alpha)
 	a1 = n1/sum(i)
@@ -186,11 +195,9 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	t2 = s2/total
 	
 	# fix zeros for logs
-	zero = min(min(m1[m1 > 0]), min(m2[m2 > 0]))
+	zero = .5*min(tpm[tpm > 0])/(sum(i) + sum(j))
 	m1 = m1 + .5*zero
 	m2 = m2 + .5*zero
-	
-	zero = min(min(u1[u1 > 0]), min(u2[u2 > 0]))
 	u1 = u1 + .5*zero
 	u2 = u2 + .5*zero
 	
@@ -252,7 +259,8 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
 
 
 p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000, batch.use=NULL,
-	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1){
+	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1,
+			  filter_genes=TRUE){
     
     # Build covariates
     print(c(ident.1, ident.2))
@@ -284,13 +292,22 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     
     # Data for DE test
     data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use)
+
+    if(filter_genes == TRUE){
     
     # Expression stats
     stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
     
     # Select genes
     genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
-    if(length(genes.use) <= 1){return(c())}
+    if(length(genes.use) == 0){return(c())}
+    if(length(genes.use) <  5){genes.use = unique(c(genes.use, names(sort(rowSums(tpm), decreasing=T)[1:5])))}
+
+    } else {
+    
+	stats = NULL
+	genes.use = rownames(data)
+    }
     
     # FDR stats
     if(do.stats == TRUE){
@@ -413,7 +430,7 @@ p.pairwise_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ..
 }
 
 
-specific_markers = function(seur, markers, covariates=NULL, formula='~ ident', lrt_regex=NULL, test.use='mast', data.use='log2', tpm=NULL, n.cores=1, ...){
+specific_markers = function(seur, markers, ident.use=NULL, test.use='mast', data.use='log2', tpm=NULL, n.cores=1, ...){
     
     # Check arguments
     markers[, ident := gsub(':.*', '', gsub('ident', '', contrast))]    
@@ -422,6 +439,12 @@ specific_markers = function(seur, markers, covariates=NULL, formula='~ ident', l
     
     # Get cell identities
     idents = as.character(levels(seur@ident))
+    if(is.null(ident.use)){
+        ident.use = idents
+    }
+    remove = setdiff(idents, unique(markers$ident))
+    if(length(remove) > 0){print(paste('Removing', paste(remove, sep=', ')))}
+    idents = intersect(idents, unique(markers$ident))
     
     # Pre-calculate TPM
     tpm = get_data(seur, data.use='tpm', tpm=tpm)
@@ -430,32 +453,43 @@ specific_markers = function(seur, markers, covariates=NULL, formula='~ ident', l
     data = get_data(seur, data.use=data.use, tpm=tpm)
     
     # Find marker genes
-    for(i in idents){
-        for(j in setdiff(idents, i)){
+    for(i in ident.use){
+
+        # Sort comparisons by overlapping genes
+        js = setdiff(idents, i)
+	js = rev(names(sort(sapply(js, function(j) length(intersect(markers[ident == i, gene], markers[ident == j, gene]))))))
+		
+        for(j in js){
 	    
 	    # get genes to test
 	    genes.1 = markers[ident == i & keep == TRUE, gene]
 	    genes.2 = markers[ident == j & keep == TRUE, gene]
 	    genes.use = intersect(genes.1, genes.2)
-	    print(paste('Testing', length(genes.use), 'genes'))
 	    if(length(genes.use) == 0){next}
+	    print(paste(i, j, 'testing', length(genes.use), 'genes'))	    
 	    
 	    # get lrt_regex
 	    lrt_regex = paste(paste0(unique(markers[ident == i, contrast]), '$'), collapse='|')
-	    
+	    	    
 	    # run marker test
-	    mi = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, dir='pos', covariates=covariates, formula=formula, lrt_regex=lrt_regex, test.use='mast', ...)
+	    mi = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, dir='pos', test.use='mast', do.stats=F, min_fc=0, lrt_regex=lrt_regex, ...)
 	    
 	    # update genes to keep
 	    if(is.null(mi)){
 	        genes.remove = genes.use
 	    } else {
-	        genes.remove = setdiff(genes.use, mi[pvalH <= .05 & log2fc > 0, gene])
+	        genes.keep = mi[((pvalD <= .05 & coefD > 0) | (pvalC <= .05 & coefC > 0)) & log2fc > 0, gene]
+	        genes.remove = setdiff(genes.use, genes.keep)
 	    }
+	    
+	    print(paste('Removing', paste(genes.remove, collapse=', ')))
 	    markers[ident == i & gene %in% genes.remove]$keep = FALSE
+	    print(paste('Keeping', paste(markers[ident == i & keep == TRUE, gene], collapse=', ')))
+	    print(paste('ident', i, 'found', sum(markers[ident == i, keep]), 'genes'))
+	    print(dim(markers))
 	}
-	print(paste('ident', i, 'found', sum(markers[ident == i, keep]), 'genes'))
     }
+    markers = markers[ident %in% ident.use,]    
     return(markers)
 }
 
@@ -578,6 +612,11 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     # Replace NAs in mastfc with maximum
     res = as.data.table(res)
     res[, mastfc := ifelse(is.na(mastfc), max(mastfc, na.rm=T), mastfc), .(contrast)]
+    
+    # Adjust p-values
+    res[, padjD := p.adjust(pvalD, 'fdr'), .(contrast)]
+    res[, padjC := p.adjust(pvalC, 'fdr'), .(contrast)]
+    res[, padjH := p.adjust(pvalH, 'fdr'), .(contrast)]
     
     options(mc.cores=1)
     return(res)

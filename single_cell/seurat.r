@@ -4,6 +4,7 @@ require(methods)
 
 source('~/code/single_cell/batch.r')
 source('~/code/single_cell/cluster.r')
+source('~/code/single_cell/dmap.r')
 source('~/code/single_cell/downsample.r')
 source('~/code/single_cell/map.r')
 source('~/code/single_cell/markers.r')
@@ -112,7 +113,7 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
 }
 
 
-run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=4000, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
+run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=5000, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
              min_cv2=.25,
 	     num_genes=1500, do.batch='none', batch.use=NULL, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, dist.use='cosine', do.largevis=FALSE, largevis.k=50,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
@@ -203,12 +204,14 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
 	v = run_cluster(seur@pca.rot[,1:num_pcs], k, method=cluster, weighted=FALSE, n.cores=min(length(k), ncores), dist='cosine', do.fast=T, knn=knn)
 	seur@data.info[,u] = v
 
-	msg(name, 'Differential expression', verbose)
 	if(marker.test != ''){
-	    covariates = subset(seur@data.info, select=c(nGene, Cell_Cycle))
+    	    msg(name, 'Differential expression', verbose)
+            covariates = subset(seur@data.info, select=c(nGene, Cell_Cycle))
+	    seur = set.ident(seur, ident.use=v[,1])
+	    print(table(seur@ident))
 	    markers = lapply(k, function(ki){
 	        seur = set.ident(seur, ident.use=seur@data.info[,paste0('Cluster.Infomap.', ki)])
-	        markers = p.find_all_markers(seur, covariates=covariates, test.use=marker.test)
+	        markers = p.find_all_markers(seur, test.use=marker.test)
 	    })
 	    names(markers) = k
 	}
@@ -237,7 +240,6 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
 	# Marker genes
 	if(marker.test != ''){
 	    for(ki in names(markers)){write.table(markers[[ki]], file=paste0(name, '.k', ki, '.', marker.test, '.txt'), sep='\t', quote=F)}
-	    for(ki in names(markers)){write.table(marker_table(markers[[ki]], pval=.05, top=50), file=paste0(name, '.k', ki, '.', marker.test, '.table.txt'), sep='\t', quote=F)}
 	}
 
 	# Plot summary statistics
@@ -257,6 +259,26 @@ safeRDS = function(object, file){
     temp = paste0(file, '.temp')
     saveRDS(object, file=temp)
     system(paste('mv', temp, file))
+}
+
+
+merge_seurat = function(seur1, seur2, rm_old=FALSE){
+    
+    # Merge objects
+    seur = MergeSeurat(seur1, seur2, do.scale=F, do.center=F, do.logNormalize=F)
+    
+    # Fix idents
+    ident = c(seur1@ident, seur2@ident)[colnames(seur@data)]
+    seur = SetIdent(seur, ident.use=ident)
+
+    # Remove old seurat objects (save memory)
+    if(rm_old == TRUE){rm(seur1); rm(seur2)}
+    
+    # Calculate log2(TPM + 1)
+    seur@data = log2(calc_tpm(seur=seur) + 1)
+    
+    # Return merged object
+    return(seur)
 }
 
 

@@ -1,5 +1,4 @@
 
-
 run_largevis = function(data, k, save_knn=FALSE, save_weights=FALSE, dist.use='euclidean', verbose=TRUE, max_iter=1){
     require(igraph)
     require(largeVis)

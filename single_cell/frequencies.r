@@ -24,7 +24,10 @@ dirichlet_regression = function(counts, covariates, formula){
     # Get p-values
     u = summary(fit)
     pvals = u$coef.mat[grep('Intercept', rownames(u$coef.mat), invert=T), 4]
-    names(pvals) = u$varnames
+    v = names(pvals)
+    pvals = matrix(pvals, ncol=length(u$varnames))
+    rownames(pvals) = gsub('condition', '', v[1:nrow(pvals)])
+    colnames(pvals) = u$varnames
     fit$pvals = pvals
     
     return(fit)
