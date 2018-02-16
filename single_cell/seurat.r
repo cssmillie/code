@@ -114,7 +114,7 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
 }
 
 
-run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=5000, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
+run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=1e6, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
              min_cv2=.25,
 	     num_genes=1500, do.batch='none', batch.use=NULL, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, dist.use='cosine', do.largevis=FALSE, largevis.k=50,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){

@@ -12,6 +12,8 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse
 
     # check arguments
     if(is.null(out) & ret == FALSE){stop('must specify out with ret=FALSE')}
+    if(dir.exists(out)){stop('invalid outfile (is a directory)')}
+    if(file.exists(out)){cat('\n*warning* will overwrite outfile\n')}
     
     # keep track of cells and filenames
     cells = colnames(data)
