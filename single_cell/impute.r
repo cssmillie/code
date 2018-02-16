@@ -21,7 +21,7 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
     if(sparse == FALSE){
         
         # write data
-        tmp = tempfile(pattern='magic.', tmpdir='~/tmp', fileext='.txt')
+        tmp = tempfile(tmpdir='~/tmp', fileext='.txt')
 	if(is.null(out)){out = tmp}
 	files = c(files, tmp)
 	fwrite(as.data.frame(t(as.matrix(data))), file=tmp, sep=',', quote=F)
@@ -32,8 +32,7 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
     } else {
 
         # write data
-        tmp = gsub('.txt', '', tempfile(pattern='magic.', tmpdir='~/tmp', fileext='.txt'))
-	fns = write_mtx(t(data), prefix=tmp)
+	fns = write_mtx(t(data), temp=TRUE)
 	files = c(files, fns$data, fns$rows, fns$cols)
 	if(is.null(out)){out = fns$data}
 	

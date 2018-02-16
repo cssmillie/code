@@ -99,9 +99,10 @@ read_mtx = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.
     return(data)
 }
 
-write_mtx = function(x, prefix='.', data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
+write_mtx = function(x, prefix='.', data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', temp=FALSE){
 
     # Get filenames
+    if(temp == TRUE){prefix = tempfile(tmpdir='~/tmp')}
     fns = mtx_filenames(prefix=prefix, data=data, rows=rows, cols=cols)
     data = fns$data
     rows = fns$rows
