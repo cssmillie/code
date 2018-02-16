@@ -9,7 +9,7 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
     # data = [genes x cells] matrix
     # k = #nn, t = #transitions, ka = autotune, eps = epsilon, rescale = %rescale
     
-    # keep track of cell names
+    # keep track of cells and filenames
     cells = colnames(data)
     files = c()
     
