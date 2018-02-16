@@ -56,31 +56,31 @@ sparse_rbind = function(M){
 }
 
 
-mtx_filenames = function(path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
+mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
 
-    # Get sparse matrix filenames from path and patterns
+    # Get sparse matrix filenames from prefix and patterns
     
-    # Get path
-    if(dir.exists(path)){path = paste0(path, '/')}
-    if(!file.exists(path)){path = paste0(path, '.')}
+    # Get prefix
+    if(dir.exists(prefix)){prefix = paste0(prefix, '/')}
+    if(!file.exists(prefix)){prefix = paste0(prefix, '.')}
     
     # Fix names
-    path = gsub('//', '/', path)
-    path = gsub('\\.\\.', '.', path)
-    path = gsub('/\\.', '/', path)
+    prefix = gsub('//', '/', prefix)
+    prefix = gsub('\\.\\.', '.', prefix)
+    prefix = gsub('/\\.', '/', prefix)
     
     # Get filenames
-    if(!file.exists(data)){data = paste0(path, data)}
-    if(!file.exists(rows)){rows = paste0(path, rows)}
-    if(!file.exists(cols)){cols = paste0(path, cols)}
+    if(!file.exists(data)){data = paste0(prefix, data)}
+    if(!file.exists(rows)){rows = paste0(prefix, rows)}
+    if(!file.exists(cols)){cols = paste0(prefix, cols)}
     
     return(list(data=data, rows=rows, cols=cols))
 }
 
-read_mtx = function(path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=FALSE){
+read_mtx = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=FALSE){
 
     # Get filenames
-    fns = mtx_filenames(path=path, data=data, rows=rows, cols=cols)
+    fns = mtx_filenames(prefix=prefix, data=data, rows=rows, cols=cols)
     data = fns$data
     rows = fns$rows
     cols = fns$cols
@@ -99,10 +99,10 @@ read_mtx = function(path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.ts
     return(data)
 }
 
-write_mtx = function(x, path='.', data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
+write_mtx = function(x, prefix='.', data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
 
     # Get filenames
-    fns = mtx_filenames(path=path, data=data, rows=rows, cols=cols)
+    fns = mtx_filenames(prefix=prefix, data=data, rows=rows, cols=cols)
     data = fns$data
     rows = fns$rows
     cols = fns$cols

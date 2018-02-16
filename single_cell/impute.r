@@ -1,20 +1,21 @@
 source('~/code/util/mtx.r')
 
-# impute data with magic
 
-impute_magic = function(data, num_pcs=20, k=30, sparse=TRUE, do.log=FALSE, out=NULL, return=TRUE){
-    
+impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, return=TRUE){
+    require(data.table)
+
+    # Run magic imputation on TPM or log2TPM (authors use TPM)
+    # see: https://github.com/KrishnaswamyLab/magic
     # data = [genes x cells] matrix
-    # num_pcs = number of PCs to use
-    # k = number of nearest neighbors
-
-    # trackers
+    # k = #nn, t = #transitions, ka = autotune, eps = epsilon, rescale = %rescale
+    
+    # keep track of cell names
     cells = colnames(data)
     files = c()
     
     # write data
     if(sparse == FALSE){
-
+        
         # write data
         tmp = tempfile(pattern='magic.', tmpdir='~/tmp', fileext='.txt')
 	if(is.null(out)){out = tmp}
@@ -22,21 +23,22 @@ impute_magic = function(data, num_pcs=20, k=30, sparse=TRUE, do.log=FALSE, out=N
 	fwrite(as.data.frame(t(as.matrix(data))), file=tmp, sep=',', quote=F)
 	
 	# magic command
-	cmd = paste0('python ~/code/single_cell/run_magic.py --txt ', tmp, ' -n ', num_pcs, ' -k ', k, ' --out ', out)
+	cmd = paste('python ~/code/single_cell/run_magic.py --txt', tmp)
     
     } else {
 
         # write data
         tmp = gsub('.txt', '', tempfile(pattern='magic.', tmpdir='~/tmp', fileext='.txt'))
-	fns = write_mtx(t(data), path=tmp)
+	fns = write_mtx(t(data), prefix=tmp)
 	files = c(files, fns$data, fns$rows, fns$cols)
 	if(is.null(out)){out = fns$data}
 	
 	# magic command
-	cmd = paste0('python ~/code/single_cell/run_magic.py --mtx ', fns$data, ' --genes ', fns$cols, ' -n ', num_pcs, ' -k ', k, ' --out ', out)
+	cmd = paste('python ~/code/single_cell/run_magic.py --mtx', fns$data, '--genes', fns$cols)
     }
-
+    
     # run magic
+    cmd = paste(cmd, '-p', num_pcs, '-k', k, '-t', t, '--ka', ka, '-e', eps, '-r', rescale, '--out', out)
     system(cmd)
     
     # load results
