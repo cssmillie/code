@@ -5,12 +5,9 @@ require(optparse)
 # Combine columns of sparse or dense expression matrices with fast rbind/cbind joins
 # ----------------------------------------------------------------------------------
 #
-# If "path" is given, join genes.tsv, barcodes.tsv, and matrix.mtx within that folder
-# If "path" is null, then use the sample mapping file in "map"
-#
-# If "path" points to a directory, it assumes CellRanger directory format
-# If "path" points to a file and ".mtx" suffix is found, then it reads with readMM
-# Otherwise, it reads the file with ffread(path, row.names=1)
+# Must specify sample mapping file ("map") or ("name", "path", and "pattern")
+# If "path" points to a file, reads as dense matrix with ffread
+# Otherwise, reads as sparse matrix with read_mtx(prefix = path)
 #
 # Optionally:
 # - "ming" (min genes per cell) and "minc" (min cells per gene) filters
@@ -28,7 +25,7 @@ require(optparse)
 
 option_list = list(make_option('--name', help='prefix added to cell names', default=NULL),
                    make_option('--path', help='sparse matrix path', default=NULL),
-		   make_option('--pattern', help='regex pattern for cells to keep', default=NULL),
+		   make_option('--pattern', help='regex pattern for cells to keep', default='.*'),
 	           make_option('--map', help='input mapping file (1=prefix, 2=path, 3=pattern)', default=NULL),
 		   make_option('--minc', help='cells per gene cutoff', type='integer', default=1),
                    make_option('--ming', help='genes per cell cutoff', type='integer', default=1),
@@ -50,7 +47,6 @@ source('~/code/util/mtx.r')
 # ------------
 
 if(!is.null(args$path)){
-    if(is.null(args$pattern)){args$pattern='.*'}
     map = matrix(c(args$name, args$path, args$pattern), nrow=1, ncol=3)
 } else {
     map = read.table(args$map, stringsAsFactors=F)
@@ -72,7 +68,7 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE)
         counts = ffread(path, row.names=TRUE)
 	counts = as(as.matrix(counts), 'sparseMatrix')
     } else {
-        counts = read_mtx(path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=TRUE)
+        counts = read_mtx(prefix=path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=TRUE)
     }
     
     # Fix formatting
