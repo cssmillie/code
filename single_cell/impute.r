@@ -1,13 +1,17 @@
 source('~/code/util/mtx.r')
 
 
-impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, return=TRUE){
+impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE){
     require(data.table)
 
     # Run magic imputation on TPM or log2TPM (authors use TPM)
     # see: https://github.com/KrishnaswamyLab/magic
     # data = [genes x cells] matrix
     # k = #nn, t = #transitions, ka = autotune, eps = epsilon, rescale = %rescale
+    # if is.null(out), then write to temporary file *that gets deleted*
+
+    # check arguments
+    if(is.null(out) & ret == FALSE){'must specify out with ret=FALSE')}
     
     # keep track of cells and filenames
     cells = colnames(data)
@@ -42,7 +46,7 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
     system(cmd)
     
     # load results
-    if(return == TRUE){
+    if(ret == TRUE){
         data = ffread(out, sep=',')
         data = t(data)
         colnames(data) = cells
