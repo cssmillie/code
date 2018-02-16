@@ -1,7 +1,7 @@
 source('~/code/util/mtx.r')
 
 
-impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE){
+impute_magic = function(data, num_pcs=20, k=30, ka=10, ep=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE){
     require(data.table)
 
     # Run magic imputation on TPM or log2TPM (authors use TPM)
@@ -41,7 +41,7 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
     }
     
     # run magic
-    cmd = paste(cmd, '-p', num_pcs, '-k', k, '-t', t, '--ka', ka, '-e', eps, '-r', rescale, '--out', out)
+    cmd = paste(cmd, '-p', num_pcs, '-k', k, '--ka', ka, '-e', eps, '-r', rescale, '--out', out)
     system(cmd)
     
     # load results
