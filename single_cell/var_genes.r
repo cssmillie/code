@@ -50,13 +50,23 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
 }
 
 
-get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
+get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, min_ident=25, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
 
     source('~/code/single_cell/parallel.r')
-
-    # Split by cell identity
+    
+    # Fix ident
     if(is.null(ident)){ident = rep(1, ncol(counts))}
     ident = as.factor(as.character(ident))
+
+    # Filter ident
+    u = sort(table(ident))
+    i = names(which(u <= min_ident))
+    if(sum(u[i]) >= min_ident){
+        new_name = 'Merge'
+    } else {
+        new_name = names(which.min(u[u >= min_ident]))
+    }
+    levels(ident)[levels(ident) %in% i] = new_name
     print(table(ident))
     
     var_genes = sapply(levels(ident), function(i){print(i)

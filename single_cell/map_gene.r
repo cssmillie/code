@@ -30,9 +30,11 @@ list2env(maps, .GlobalEnv)
 predict_organism = function(genes){
     if(sum(genes %in% hgenes) > sum(genes %in% mgenes)){
         return('human')
-    } else {
+    }
+    if(sum(genes %in% hgenes) < sum(genes %in% mgenes)){
         return('mouse')
     }
+    return('unknown')
 }
 
 
@@ -61,11 +63,27 @@ get_orthologs = function(genes, source='mouse', target='human'){
 }
 
 
-map_gene = function(genes, target='human'){
-    source = predict_organism(genes)
+map_gene = function(genes, target='human', source='auto'){
+    
+    # predict source organism from gene list
+    # --------------------------------------
+    
+    if(source == 'auto'){
+        source = predict_organism(genes)
+    }
+
+    if(source == 'unknown'){
+        cat(paste('\nmap_gene: unknown source organism, assuming source =', target, '\n'))
+	source = target
+    }
+
+    # map genes using synonyms or orthologs
+    # -------------------------------------
+    
     if(source == target){
         get_synonyms(genes, target=target)
     } else {
         get_orthologs(genes, source=source, target=target)
     }
+
 }

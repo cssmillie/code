@@ -6,6 +6,7 @@ source('~/code/single_cell/batch.r')
 source('~/code/single_cell/cluster.r')
 source('~/code/single_cell/dmap.r')
 source('~/code/single_cell/downsample.r')
+source('~/code/single_cell/gsea.r')
 source('~/code/single_cell/map.r')
 source('~/code/single_cell/markers.r')
 source('~/code/single_cell/parallel.r')
@@ -13,7 +14,7 @@ source('~/code/single_cell/pca.r')
 source('~/code/single_cell/plot.r')
 source('~/code/single_cell/tsne.r')
 source('~/code/single_cell/var_genes.r')
-
+source('~/code/util/mtx.r')
 
 msg = function(name, text, verbose){
     if(verbose == TRUE){
@@ -129,8 +130,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     
     msg(name, 'Selecting variable genes', verbose)
     ident = seur@ident
-    levels(ident)[table(ident)[levels(ident)] <= 25] = 'Merge'   
-    var_genes = get_var_genes(seur@raw.data, ident=ident, method=varmet, num_genes=num_genes)
+    var_genes = get_var_genes(seur@raw.data, ident=ident, method=varmet, num_genes=num_genes, min_ident=25)
     if(!is.null(var_regexv)){var_genes = grep(var_regexv, var_genes, invert=T, value=T)}
     msg(name, sprintf('Found %d variable genes', length(var_genes)), verbose)
     seur@var.genes = intersect(var_genes, rownames(seur@data))

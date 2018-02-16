@@ -4,10 +4,12 @@
 require(optparse)
 option_list = list(make_option('--map', help='input mapping file (1=project, 2=path, 3=pattern)'),
                    make_option('--ming', help='genes per cell cutoff', type='integer'),
-                   make_option('--out', help='output file')
+                   make_option('--out', help='output file'),
+		   make_option('--rename', help='use base cell names', action='store_true', default=F)
                    )
 args = parse_args(OptionParser(option_list=option_list))
 
+require(Matrix)
 require(plyr)
 require(tidyverse)
 
@@ -24,7 +26,8 @@ read_dge = function(path){
     dge = dge %>% group_by_(colnames(dge)[[1]]) %>% summarize_each(funs(sum)) %>% data.frame(row.names=1)
     # fix 10x column names
     colnames(dge) = gsub('\\.1$', '', colnames(dge))
-    return(dge)
+    if(args$rename == TRUE){colnames(dge) = gsub('.*\\.', '', colnames(dge))}
+    return(as(dge, 'sparseMatrix'))
 }
 
 # Get list of DGEs

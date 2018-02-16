@@ -34,21 +34,23 @@ load_signature = function(file=NULL){
 }
 
 
-get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, cells.use=NULL, group_by=NULL, type='mean', do.log2=TRUE){
+get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, regex=NULL, file=NULL, file.cols=NULL, file.regex=NULL, top=NULL, cells.use=NULL, group_by=NULL, order_by=NULL,
+	              type='mean', do.log=TRUE, log_type='pre', log_zero=1){
     
     # Score gene expression for every cell (type = alpha, mu, or mean)
     
     # Map variables
-    genes = feats = gene_scores = feat_scores = c()
+    genes = feats = c()
     names = as.list(names)
     regex = as.list(regex)
     if(is.null(data) & !is.null(seur)){data = seur@data}
     if(is.null(meta) & !is.null(seur)){meta = seur@data.info}
     
     # Fix input data
-    if(!is.null(scores)){scores = as.data.frame(scores)}
+    if(!is.null(scores)){scores = as.data.frame(scores, row.names=colnames(seur@data))}
     if(!is.null(group_by)){names(group_by) = colnames(seur@data)}
-    
+    name_map = structure(make.names(colnames(scores)), names=colnames(scores))
+
     # Subset cells
     if(!is.null(cells.use)){
         data = data[,cells.use]
@@ -67,30 +69,36 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
     
     # Add regex terms
     if(length(regex) > 0){
-        genes = c(genes, structure(sapply(regex, function(a) grep(a, rownames(data), value=T), simplify=F), names=regex))
-	feats = c(feats, structure(sapply(regex, function(a) grep(a, colnames(meta), value=T), simplify=F), names=regex))
+        genes = c(genes, structure(sapply(regex, function(a) grep(a, rownames(data), value=T, perl=T), simplify=F), names=regex))
+	feats = c(feats, structure(sapply(regex, function(a) grep(a, colnames(meta), value=T, perl=T), simplify=F), names=regex))
     }
     
     # Convert to named lists
     if(length(genes) > 0){
         if(is.null(names(genes))){names(genes) = rep('', length(genes))}
 	names(genes) = ifelse(names(genes) == '', sapply(genes, function(a) paste(a, collapse='.')), names(genes))
+	name_map[names(genes)] = make.names(names(genes))
     }    
     if(length(feats) > 0){
         if(is.null(names(feats))){names(feats) = rep('', length(feats))}
 	names(feats) = ifelse(names(feats) == '', sapply(feats, function(a) paste(a, collapse='.')), names(feats))
+	name_map[names(feats)] = make.names(names(feats))
     }
     
     # Load signatures from file
     if(!is.null(file)){
         sig = load_signature(file)
+	if(!is.null(file.regex)){file.cols = grep(file.regex, names(sig), value=T)}
 	if(!is.null(file.cols)){sig = sig[file.cols]}
 	genes = c(genes, sig)
+	name_map[names(sig)] = make.names(names(sig))
     }
     
     # Fix lists
     genes = genes[sapply(genes, length) > 0]
     feats = feats[sapply(feats, length) > 0]
+    if(length(genes) > 0){names(genes) = name_map[names(genes)]}
+    if(length(feats) > 0){names(feats) = name_map[names(feats)]}
     
     # Get gene scores
     if(length(genes) > 0){
@@ -114,8 +122,8 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
 	# Convert to alpha, mu, or mean
 	if(type == 'alpha'){si = si > 0}
 	if(type == 'mu'){si[si == 0] = NA}
-	if(do.log2 == TRUE & type %in% c('mu', 'mean')){si = log2(si + 1)}
 	
+	# Combine scores
 	scores = cbind(scores, si)
     }
     
@@ -128,6 +136,12 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
 	}
     }
     
+    # Calculate log2 before mean
+    if((do.log == TRUE & log_type == 'pre') & length(genes) > 0){
+        gene_names = names(genes)
+	scores[,gene_names] = log2(scores[,gene_names] + log_zero)
+    }
+    
     # Group scores
     if(!is.null(group_by)){
         scores = data.frame(aggregate(scores, list(as.character(group_by)), mean, na.rm=T), row.names=1)
@@ -136,11 +150,21 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
 	}
     }
     
+    # Calculate log2 after mean
+    if((do.log == TRUE & log_type == 'post') & length(genes) > 0){
+        gene_names = make.names(names(genes))
+	scores[,gene_names] = log2(scores[,gene_names] + zero)
+    }
+    
+    # Reverse map
+    for(a in names(name_map)){if(a != ''){b = name_map[[a]]; name_map[[b]] = a}}
+    if(!is.null(scores)){colnames(scores) = name_map[colnames(scores)]}
+    
     return(scores)
 }
 
 
-plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, type='mean', ident=TRUE,
+plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, file.regex=NULL, top=NULL, type='mean', ident=TRUE,
                      cells.use=NULL, ymin=0, ymax=1, num_col='auto', pt.size=.75, font.size=11, do.label=T, label.size=5, do.title=TRUE, title.use=NULL,
 	             do.legend=TRUE, legend.title='log2(TPM)', share_legend=FALSE, legend_width=.05, vmin=NA, vmax=NA, na.value='transparent',
 		     out=NULL, nrow=1.5, ncol=1.5, ...){
@@ -165,7 +189,7 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     d = data.frame(d[cells.use,])
     
     # Cell scores
-    scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, type=type, cells.use=cells.use)
+    scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.cols=file.cols, file.regex=file.regex, type=type, cells.use=cells.use)
     if(!is.null(scores)){d = cbind.data.frame(d, scores)}
     
     # Initialize plotlist
@@ -385,20 +409,22 @@ plot_dots = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, r
 
 
 plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, file=NULL, file.cols=NULL, top=NULL, type='mean', group_by=NULL, color_by=NULL, pt.size=.25,
-	               do.facet=FALSE, facet_by=NULL, facet_scales='free_y', ymin=0, ymax=1, do.scale=FALSE,
+	               do.facet=FALSE, facet_by=NULL, facet_formula=NULL, facet_scales='free_y', ymin=0, ymax=1, do.scale=FALSE, num_col='auto',
                        ident=TRUE, cells.use=NULL, do.title=TRUE, do.legend=FALSE, xlab='Cell Type', ylab='log2(TPM)', out=NULL, nrow=1.5, ncol=1.5, legend.title='Group',
-		       coord_flip=FALSE, alpha=.5){
+		       coord_flip=FALSE, alpha=.5, order=NULL){
     
     # Initialize plots
     ps = list()
 
     # Get facet formula
+    if(is.null(facet_formula)){
     if(do.facet == FALSE){
         facet_formula = ifelse(is.null(facet_by), '~ .', 'Facet ~ .')
     } else {
         do.title = FALSE
         facet_formula = ifelse(is.null(facet_by), 'Feature ~ .', 'Feature ~ Facet + .')
     }
+    } else {facet_formula = as.formula(facet_formula)}
     
     # Fix input arguments
     if(is.null(group_by)){group_by = seur@ident}
@@ -469,8 +495,12 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	
 	ps[[col]] = p
     }
-    
-    p = plot_grid(plotlist=ps, ncol=ceiling(length(ps)/3))
+
+    if(num_col == 'auto'){
+        num_col = ceiling(sqrt(length(ps)))
+    }
+    ps = make_compact(ps, num_col=num_col)
+    p = plot_grid(plotlist=ps, ncol=num_col)
     if(is.null(out)){
         p
     } else {
@@ -513,8 +543,8 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
 
     # Groups (default = rows)
     if(is.null(group_by)){group_by = rownames(data)}
-    group_by = as.factor(group_by)
-
+    if(nlevels(group_by) == 0){group_by = as.factor(group_by)}
+    
     # Select significant comparisons
     if(!is.null(pvals)){
         if(sum(! rownames(pvals) %in% group_by) > 0){stop('rownames(pvals) != group_by')}
@@ -583,38 +613,43 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
 }
 
 
-plot_volcano = function(fcs, pvals, color_by=NULL, facet_by=NULL, labels=NULL, lab.x=c(-2.5, 2.5), lab.nox=c(-1,1), lab.pval=0, lab.n=0, font.size=11, legend.title='Groups', out=NULL, nrow=1.5, ncol=1.5,
-                        xlab='Fold change', ylab='-log10(pval)'){
-
-    # Create a volcano plot using supplied p-values and fold-changes
-    # Label points with fold-changes defined by lab.x and pval < lab.pval
-    # Label points with best p-values along entire fold-change axis
-
-    # Fix input arguments
+plot_volcano = function(fcs, pvals, labels=NULL, color_by=NULL, facet_by=NULL, lab.x=c(-1, 1), max_pval=.05, lab.n=0, lab.p=0, lab.size=5, do.repel=TRUE,
+                        font.size=11, legend.title='Groups', out=NULL, nrow=1.5, ncol=1.5, xlab='Fold change', ylab='-log10(pval)', palette='RdBu', ret.labs=FALSE){
+    
+    # Volcano plot with automatic labeling:
+    # best p-values in region lab.x (n = lab.n)
+    # best p-values globally (n = lab.p)
+    
+    # Make plot data
     if(is.null(color_by)){color_by = rep('Group', length(fcs))}
     if(is.null(facet_by)){facet_by = rep('Group', length(fcs))}
-    
     data = data.frame(x=fcs, y=-log10(pvals), Color=color_by, Facet=facet_by, stringsAsFactors=F)
     data$Facet = as.factor(data$Facet)
     
-    # Select labels to keep
-    if(!is.null(labels)){
+    if(!is.null(labels)){        
+        for(facet in unique(data$Facet)){
+		    
+	    # Select facet data
+	    i = which(data$Facet == facet & 10**(-data$y) <= max_pval)
+	    di = data[i,]
+	    
+	    # Label points < lab.x
+	    breaks = seq(from=min(di$x, na.rm=T), to=lab.x[[1]], length.out=10)
+	    groups = cut(di$x, breaks=breaks)
+	    j1 = as.numeric(simple_downsample(cells=1:nrow(di), groups=groups, ngene=di$y, total_cells=as.integer(lab.n/2)))
 
-        # Hard cutoffs
-        data$labels = FALSE
-        data$labels[data$x < lab.x[[1]] & data$y >= -log10(lab.pval)] = TRUE
-        data$labels[data$x > lab.x[[2]] & data$y >= -log10(lab.pval)] = TRUE
-	
-	# Select top N per facet
-	for(facet in unique(data$Facet)){
-	    i = which(data$Facet == facet)
-	    u = sort(unname(unlist(tapply(1:nrow(data[i,]), cut(data[i,]$x, lab.n), function(j) j[which.max(data[i,]$y[j])]))))
-	    data[i[u], 'labels'] = TRUE
+	    # Label points > lab.x
+	    breaks = seq(from=lab.x[[2]], to=max(di$x, na.rm=T), length.out=10)
+	    groups = cut(di$x, breaks=breaks)
+	    j2 = as.numeric(simple_downsample(cells=1:nrow(di), groups=groups, ngene=di$y, total_cells=as.integer(lab.n/2)))
+	    
+	    # Label best global p-values
+	    j3 = which(order(-1*di$y) <= lab.p)
+
+	    # Set labels
+	    j = sort(unique(c(j1, j2, j3)))
+	    data[i[j], 'labels'] = TRUE
 	}
-
-	# Remove labels
-	data$labels[lab.nox[[1]] < data$x & data$x < lab.nox[[2]]] = FALSE
-		
     } else {
         data$labels = FALSE
     }	
@@ -623,9 +658,27 @@ plot_volcano = function(fcs, pvals, color_by=NULL, facet_by=NULL, labels=NULL, l
     data$labels = ifelse(data$labels, labels, '')
     
     # Make volcano plot
-    p = ggplot(data, aes(x=x, y=y)) + geom_point(aes(colour=Color)) + geom_text_repel(aes(label=labels)) + theme_cowplot(font_size=font.size) + xlab(xlab) + ylab(ylab) +
-        scale_colour_manual(values=tsne.colors)
+    p = ggplot(data, aes(x=x, y=y)) +
+        geom_point(aes(colour=Color)) +
+	theme_cowplot(font_size=font.size) +
+	xlab(xlab) +
+	ylab(ylab)
     
+    # Add labels
+    if(do.repel == TRUE){
+        p = p + geom_text_repel(aes(label=labels), size=lab.size, segment.color='#cccccc')
+    } else {
+        p = p + geom_text(aes(label=labels), size=lab.size)
+    }
+    
+    # Add color scale
+    if(is.numeric(data$Color)){
+        p = p + scale_colour_distiller(palette=palette, trans='reverse')
+    } else {
+        p = p + scale_colour_manual(values=tsne.colors)
+    }
+    
+    # Facet wrap
     if(nlevels(data$Facet) > 1){
         print('Faceting')
         p = p + facet_wrap(~ Facet, scales='free') +
@@ -637,7 +690,75 @@ plot_volcano = function(fcs, pvals, color_by=NULL, facet_by=NULL, labels=NULL, l
 	    strip.background = element_blank())
 	    
     }
-    
+
+    # Save to file
     if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}
-    p
+    if(ret.labs){as.character(na.omit(data$labels))} else {p}
+}
+
+
+mast_volcanos = function(markers, outdir='volcano'){
+    
+    # Create output directory
+    if(!file.exists(outdir)){dir.create(outdir)}
+    
+    # Split markers by contrast
+    m = split(markers, markers$contrast)
+    
+    # Make each volcano plot
+    for(name in names(m)){
+        out = gsub(':', '.', paste0(outdir, '/', name, '.volcano.png'))
+        plot_volcano(m[[name]]$coefD, m[[name]]$pvalD, labels=m[[name]]$gene, color_by=m[[name]]$padjD < .05, lab.x=c(-.5, .5), max_pval=.05, lab.n=100, lab.p=20, lab.size=3, out=out, nrow=2, ncol=2)	
+    }
+}
+
+
+simple_scatter = function(x, y, lab=NULL, col=NULL, lab.use=NULL, lab.n=0, lab.g=0, groups=NULL, lab.size=4, lab.type='up', palette='RdBu', xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1){
+
+    require(ggplot2)
+    require(ggrepel)
+    require(cowplot)
+    
+    d = data.frame(x=x, y=y, lab=lab, col='0', stringsAsFactors=FALSE)
+
+    if(is.null(xlab)){xlab = deparse(substitute(x))}
+    if(is.null(ylab)){ylab = deparse(substitute(y))}
+    
+    if(lab.n > 0){
+        if(is.null(groups)){
+            breaks = seq(from=min(d$x, na.rm=T), to=max(d$x, na.rm=T), length.out=20)
+	    groups = cut(d$x, breaks=breaks)
+	}
+	i = c()
+	if(lab.type %in% c('both', 'up')){
+	    i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups, ngene=d$y, total_cells=lab.n)))
+	    i = c(i, which(order(-1*d$y) <= lab.g))
+	}
+	if(lab.type %in% c('both', 'down')){
+	    i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups, ngene=-1*d$y, total_cells=lab.n)))
+	    i = c(i, which(order(d$y) <= lab.g))
+	}
+	d[unique(i), 'col'] = '1'
+    }
+    
+    if(!is.null(lab.use)){d$col[d$lab %in% lab.use] = '2'}
+    d$lab[d$col == '0'] = ''
+    d = d[order(d$col),]
+    
+    p = ggplot(d, aes(x=x, y=y)) +
+        geom_point(aes(colour=col)) +
+	geom_text_repel(aes(label=lab), size=lab.size, segment.color='grey') +
+	theme_cowplot() + xlab(xlab) + ylab(ylab)
+
+    if(is.null(col)){
+        p = p + scale_colour_manual(values=c('lightgray', 'black', 'red')) + theme(legend.position='none')	
+    } else if(is.numeric(d$col)){
+        p = p + scale_colour_distiller(palette=palette, trans='reverse')
+    } else {
+        p = p + scale_colour_manual(values=tsne.colors)
+    }
+
+    if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}
+
+    return(p)
 }

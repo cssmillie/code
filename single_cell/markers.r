@@ -132,7 +132,7 @@ select_genes = function(seur, stats, genes.use=NULL, min_cells=3, min_alpha=.025
 }
 
 
-expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL, cells.use=NULL, invert_method='auto', invert_logic='last'){
+expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL, cells.use=NULL, invert_method='auto', invert_logic='last', do.ratio=FALSE, samples=NULL, bg_tpm=NULL){
     
     # Calculate expression statistics for groups specified by formula
     # each column of the model matrix is either a single term A or an interaction term A:B
@@ -140,7 +140,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
     # if interaction, then select cells A:B and A:~B
     # for multi-level factors, ~A is the next highest level of A
     source('~/code/util/mm_utils.r')
-
+    
     # Select cells
     if(!is.null(cells.use)){
         tpm = tpm[,cells.use]
@@ -158,6 +158,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
     # Invert matrix
     print('Invert matrix')
     u = mm_logical_not(mm, formula, covariates, method=invert_method, invert=invert_logic)
+    
     MM = u$x
     refs = structure(u$names, names=colnames(MM))
     
@@ -203,9 +204,25 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	
 	# log fold change
 	log2fc = log2(u1) - log2(u2)
+
+	if(do.ratio == TRUE){
+
+	    # calculate ratio for group of interest
+	    f1 = table(samples[colnames(tpm)[i]])
+	    f1 = f1/sum(f1)
+	    b1 = colSums(t(bg_tpm[,names(f1),drop=F])*as.vector(f1))	    
+	    r1 = u1/b1[names(u1)]
+
+	    # calculate ratio for reference group
+	    f2 = table(samples[colnames(tpm)[j]])
+	    f2 = f2/sum(f2)
+	    b2 = colSums(t(bg_tpm[,names(f2),drop=F])*as.vector(f2))
+	    r2 = u2/b2[names(u2)]
+	    
+	} else {r1 = r2 = NA}
 	
 	# combine in data frame
-	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=log2(m1), ref_mu=log2(m2), mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc)
+	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=log2(m1), ref_mu=log2(m2), mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc, ratio=r1, ref_ratio=r2)
 	return(res)
     })
     stats = as.data.table(do.call(rbind, stats))
@@ -260,7 +277,7 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
 
 p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000, batch.use=NULL,
 	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1,
-			  filter_genes=TRUE){
+			  filter_genes=TRUE, do.ratio=FALSE, samples=NULL){
     
     # Build covariates
     print(c(ident.1, ident.2))
@@ -287,22 +304,42 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     # Select cells
     cells.use = select_cells(seur, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
     
-    # TPM for log fold changes
+    # Mean TPM for contamination ratio [genes x samples]
+    if(do.ratio == TRUE){
+        
+        # Fix samples
+	if(is.null(samples)){
+	    samples = as.character(seur@data.info$orig.ident)
+	}
+	if(is.null(names(samples))){
+	    names(samples) = colnames(seur@data)
+	}
+	print(table(samples))
+	
+	# Background TPM
+	bg_tpm = t(get_data(seur, data.use='tpm', tpm=tpm, cells.use=colnames(seur@data)))
+	bg_tpm = sapply(unique(samples), function(a) colMeans(bg_tpm[samples == a,]))
+	if(!is.null(genes.use)){bg_tpm = bg_tpm[genes.use,,drop=F]}
+    
+    } else {bg_tpm = NULL}
+    
+    # TPM for log fold changes [genes x cells]
     tpm = get_data(seur, data.use='tpm', tpm=tpm, cells.use=cells.use)
     
-    # Data for DE test
+    # Data for DE test [genes x cells]
     data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use)
-
+    
     if(filter_genes == TRUE){
     
     # Expression stats
-    stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
+    stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic,
+                             do.ratio=do.ratio, samples=samples, bg_tpm=bg_tpm)
     
     # Select genes
     genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
     if(length(genes.use) == 0){return(c())}
     if(length(genes.use) <  5){genes.use = unique(c(genes.use, names(sort(rowSums(tpm), decreasing=T)[1:5])))}
-
+    
     } else {
     
 	stats = NULL
@@ -655,5 +692,64 @@ filter_mast = function(markers, regex=NULL, pval=NULL, padj=NULL, min_log2fc=NUL
     # Split markers by contrast
     if(split == TRUE){markers = split(markers, markers$contrast)}
     
+    return(markers)
+}
+
+
+collapse_markers = function(m){
+
+    # Collapse markers on (contrast, gene) using mean or [[1]]
+    
+    # track colnames
+    a = colnames(m)
+    
+    # split columns by numeric
+    j = sapply(m, is.numeric)
+    u = m[, c('contrast', 'gene', names(which(j))), with=F]
+    v = m[, names(which(!j)), with=F]
+
+    # mean or [[1]] columns
+    u = u[, lapply(.SD, mean), .(contrast, gene)]
+    v = v[, .SD[1,], .(contrast, gene)]
+
+    # merge lists
+    setkey(u, contrast, gene)
+    setkey(v, contrast, gene)
+    m = u[v][,a,with=F]
+
+    # order by contrast and pvalH
+    m[order(contrast, pvalH)]
+}
+
+next_stats = function(markers, min_pval=1, min_padj=1, anno=NULL){
+
+    # for each ident/gene, calculate next statistics using all non-overlapping idents
+    # non-overlapping idents calculated using select_keys(anno, i, invert=T)
+    # example: load_anno(key='name', value='ident')
+    # optionally filter the marker matrix to keep only significant markers
+    
+    # filter marker lists (optionally)
+    markers = markers[(pvalD <= min_pval | pvalC <= min_pval)]
+    markers = markers[(padjD <= min_pval | padjC <= min_pval)]
+    
+    # make and test annotations
+    idents = sort(unique(markers$ident))
+    if(is.null(anno)){anno = structure(idents, names=idents)}
+    if(any(! idents %in% names(anno))){stop('ident not in names(anno)')}
+    
+    # initialize columns
+    markers[, c('next_alpha', 'next_mu', 'next_mean', 'next_log2fc') := as.numeric(NA)]
+    setkeyv(markers, c('ident', 'gene'))
+    # test if keys are unique
+    if(nrow(markers) != uniqueN(markers[,.(ident, gene)])){stop('(ident, gene) not unique')}
+    
+    # iterate over idents
+    idents = sort(unique(markers$ident))
+    for(i in idents){
+        j = select_keys(anno, i, invert=T)
+	m = markers[ident %in% j][, list(next_alpha=max(alpha), next_mu=max(mu), next_mean=max(mean)), .(gene)]
+	markers[.(i, m$gene), c('next_alpha', 'next_mu', 'next_mean') := m[,.(next_alpha, next_mu, next_mean)]]
+    }
+    markers$next_log2fc = markers$mean - markers$next_mean
     return(markers)
 }

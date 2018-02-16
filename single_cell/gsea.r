@@ -37,7 +37,7 @@ fast_gsea = function(ranks, pathways='~/aviv/db/gsea/pathways.rds', minSize=10, 
 }
 
 
-fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Jensen_DISEASES', collapse=FALSE){
+fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Panther_2016', collapse=FALSE){
     
     require(enrichR)
     require(data.table)
@@ -104,6 +104,13 @@ gsea_heatmap = function(terms=NULL, names=NULL, genes=NULL, max_names=50, min_ge
     # Fix names
     if(fix_names == TRUE){
         names = gsub('\\(GO[^\\)]*\\)', '', names)
+	names = gsub('positive', 'pos', names)
+	names = gsub('negative', 'neg', names)
+	names = gsub('regulation', 'reg', names)
+	names = gsub('response', 'resp', names)
+	names = gsub('signaling', 'sig', names)
+	names = gsub('interaction', 'ix', names)
+	names = substr(names, 1, 40)
     }
     
     # Incidence matrix
@@ -235,18 +242,17 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
 }
 
 
-go_genes = function(seur, genes, ontology='BP'){
+go_genes = function(genes, universe, ontology='BP'){
 
     require(topGO)
-    all_genes = rownames(seur@data)
     GO2genes = readMappings(file='~/aviv/db/gopca/go.test.txt', sep='\t')
-    gene_list = as.numeric(all_genes %in% genes)
-    names(gene_list) = all_genes
+    gene_list = as.numeric(universe %in% genes)
+    names(gene_list) = universe
     gene_list = factor(gene_list)
     
     # Run topGO tests
     GOdata = new('topGOdata', ontology=ontology, allGenes=gene_list, annot=annFUN.GO2genes, GO2genes=GO2genes)
-    res = runTest(GOdata, algorithm='classic', statistic='ks')
+    res = runTest(GOdata, algorithm='classic', statistic='fisher')
     res = GenTable(GOdata, res, topNodes=min(1000, length(res@score)))
     res = res[res$result1 <= .05,]
     return(res)
