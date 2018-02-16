@@ -1,17 +1,30 @@
 import argparse
 import magic
+import sys
 
-# This script runs Phenograph 
+# Run magic imputation
+# input = TPM or log2TPM (authors use TPM)
+# output = imputed data
 
 # Get input arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--txt', help='TXT file (rows = cells, columns = features)', default='')
 parser.add_argument('--mtx', help='MTX file (rows = cells, columns = features)', default='')
 parser.add_argument('--genes', help='Genes file', default='')
-parser.add_argument('-n', help='Number of PCs', default=20, type=int)
+parser.add_argument('-p', help='Number of PCs', default=20, type=int)
+parser.add_argument('-t', help='Number of transitions', default=6, type=int)
 parser.add_argument('-k', help='Number of nearest neighbors', default=30, type=int)
+parser.add_argument('--ka', help='Knn autotune parameter', default=10, type=int)
+parser.add_argument('-e', help='Epsilon', default=1, type=float)
+parser.add_argument('-r', help='Rescale percent', default=99, type=float)
 parser.add_argument('--out', help='Outfile (clusters)')
 args = parser.parse_args()
+
+# Check arguments
+if args.txt == '' and args.mtx == '':
+    sys.exit('must specify txt or mtx')
+if args.mtx != '' and args.genes == '':
+    sys.exit('must specify mtx and genes')
 
 # Run phenograph
 if args.txt != '':
@@ -23,7 +36,7 @@ if args.mtx != '':
     scdata = magic.mg.SCData.from_mtx(args.mtx, args.genes, normalize=False)
 
 print('Running magic')
-scdata.run_magic(n_pca_components=args.n, random_pca=True, t=6, k=args.k, ka=10, epsilon=1, rescale_percent=99)
+scdata.run_magic(n_pca_components=args.p, random_pca=True, t=args.t, k=args.k, ka=args.ka, epsilon=args.e, rescale_percent=args.r)
 
 print('Writing data')
 scdata.magic.to_csv(args.out)
