@@ -46,17 +46,15 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
         data = ffread(out, sep=',')
         data = t(data)
         colnames(data) = cells
+    } else {
+        data = NULL
     }
     
     # cleanup files
     for(fn in fns){system(paste0('rm ', fn))}
-
+    
     # return results
-    if(return == TRUE){
-        return(data)
-    } else {
-        return(NULL)
-    }
+    return(data)
 }
 
 
