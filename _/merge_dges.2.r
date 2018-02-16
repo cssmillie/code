@@ -5,9 +5,12 @@ require(optparse)
 # Combine columns of sparse or dense expression matrices with fast rbind/cbind joins
 # ----------------------------------------------------------------------------------
 #
-# Must specify sample mapping file ("map") or ("name", "path", and "pattern")
-# If "path" points to a file, reads as dense matrix with ffread
-# Otherwise, reads as sparse matrix with read_mtx(prefix = path)
+# If "path" is given, join genes.tsv, barcodes.tsv, and matrix.mtx within that folder
+# If "path" is null, then use the sample mapping file in "map"
+#
+# If "path" points to a directory, it assumes CellRanger directory format
+# If "path" points to a file and ".mtx" suffix is found, then it reads with readMM
+# Otherwise, it reads the file with ffread(path, row.names=1)
 #
 # Optionally:
 # - "ming" (min genes per cell) and "minc" (min cells per gene) filters
@@ -25,7 +28,7 @@ require(optparse)
 
 option_list = list(make_option('--name', help='prefix added to cell names', default=NULL),
                    make_option('--path', help='sparse matrix path', default=NULL),
-		   make_option('--pattern', help='regex pattern for cells to keep', default='.*'),
+		   make_option('--pattern', help='regex pattern for cells to keep', default=NULL),
 	           make_option('--map', help='input mapping file (1=prefix, 2=path, 3=pattern)', default=NULL),
 		   make_option('--minc', help='cells per gene cutoff', type='integer', default=1),
                    make_option('--ming', help='genes per cell cutoff', type='integer', default=1),
@@ -39,7 +42,6 @@ require(data.table)
 require(Matrix)
 require(plyr)
 require(tidyverse)
-source('~/code/util/mtx.r')
 
 
 # ------------
@@ -47,6 +49,7 @@ source('~/code/util/mtx.r')
 # ------------
 
 if(!is.null(args$path)){
+    if(is.null(args$pattern)){args$pattern='.*'}
     map = matrix(c(args$name, args$path, args$pattern), nrow=1, ncol=3)
 } else {
     map = read.table(args$map, stringsAsFactors=F)
@@ -60,22 +63,69 @@ map$name[is.na(map$name)] = ''
 # -------------
 
 
-# Read DGE (sparse or text)
-read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE){
+# CellRanger matrix filenames
+mtx_filenames = function(path){
+    
+    if(dir.exists(path)){
+        path = paste0(path, '/')
+    } else {
+        path = paste0(path, '.')
+    }
+    
+    path = gsub('//', '/', path)
+    path = gsub('\\.\\.', '\\.', path)
+    path = gsub('/\\.', '/', path)
+    
+    list(genes=paste0(path, 'genes.tsv'),
+         barcodes=paste0(path, 'barcodes.tsv'),
+	 matrix=paste0(path, 'matrix.mtx'))
+}
+
+
+# Sparse matrix
+read_mtx = function(path){
+    
+    # Get filenames
+    fns = mtx_filenames(path)
+    genes_fn = fns$genes
+    barcodes_fn = fns$barcodes
+    counts_fn = fns$matrix
+    
+    # Read matrix
+    counts = readMM(counts_fn)
+    genes = read.table(genes_fn, sep='\t')
+    genes = genes[,ncol(genes)]
+    barcodes = readLines(barcodes_fn)
+    
+    # Fix duplicate gene names
+    counts = rowsum(as.matrix(counts), genes)
+    colnames(counts) = barcodes
+    
+    as(counts, 'sparseMatrix')
+}
+
+
+# Text matrix
+read_txt = function(path){
+    counts = ffread(path, row.names=TRUE)
+    as(as.matrix(counts), 'sparseMatrix')
+}
+
+
+# Read path (sparse or text)
+read_path = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE){
     
     # Read sparse or text matrix
     if(file.exists(path) & !dir.exists(path)){
-        counts = ffread(path, row.names=TRUE)
-	counts = as(as.matrix(counts), 'sparseMatrix')
+        counts = read_txt(path)
     } else {
-        counts = read_mtx(prefix=path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=TRUE)
+        counts = read_mtx(path)
     }
     
     # Fix formatting
     rownames(counts) = gsub('^mm10_', '', rownames(counts))
     rownames(counts) = gsub('^hg19_', '', rownames(counts))
     colnames(counts) = gsub('\\.1$', '', colnames(counts))
-    colnames(counts) = gsub('-1$', '', colnames(counts))
     if(rename == TRUE){colnames(counts) = gsub('.*\\.', '', colnames(counts))}
     colnames(counts) = paste(prefix, colnames(counts), sep='.')
     colnames(counts) = gsub('^\\.', '', colnames(counts))
@@ -95,7 +145,7 @@ for(i in 1:nrow(map)){
     name = map[i,1]
     path = map[i,2]
     pattern = map[i,3]
-    dges[[path]] = read_dge(path, prefix=name, pattern=pattern, ming=args$ming, minc=args$minc, rename=args$rename)
+    dges[[path]] = read_path(path, prefix=name, pattern=pattern, ming=args$ming, minc=args$minc, rename=args$rename)
 }
 
 
@@ -105,7 +155,30 @@ for(i in 1:nrow(map)){
 
 cat('\nInitializing DGE\n')
 
-x = sparse_cbind(dges)
+# Make merged matrix
+genes = unique(sort(unlist(sapply(dges, rownames))))
+x = Matrix(0, nrow=length(genes), sparse=T)
+rownames(x) = genes
+
+# Fast merge using rbind/cbind
+for(name in names(dges)){
+    cat(paste('\nMerging', name, '\n'))
+    
+    # Select DGE
+    dge = dges[[name]]
+
+    # Fast align    
+    new = Matrix(0, nrow=length(genes)-nrow(dge), ncol=ncol(dge), sparse=T)
+    rownames(new) = setdiff(genes, rownames(dge))
+    dge = rbind(dge, new)
+    dge = dge[genes,]
+
+    # Fast combine
+    x = cbind(x, dge)
+}
+
+# Remove first column
+x = x[,2:ncol(x)]
 
 
 # ------------
@@ -122,8 +195,19 @@ x = x[genes.use, cells.use]
 cat(paste0('\nWriting DGE [', nrow(x), ' x ', ncol(x), ']\n'))
 
 # Write to file
-if(args$sparse == TRUE){    
-    write_mtx(x, path=args$out, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv')
+if(args$sparse == TRUE){
+    
+    # Get filenames
+    fns = mtx_filenames(args$out)
+    genes_fn = fns$genes
+    barcodes_fn = fns$barcodes
+    counts_fn = fns$matrix
+
+    # Write sparse matrix
+    writeLines(rownames(x), genes_fn)
+    writeLines(colnames(x), barcodes_fn)
+    writeMM(x, file=counts_fn)
+    
 } else {
     cat('\nWriting dense matrix\n')
     require(tibble)

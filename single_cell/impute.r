@@ -1,7 +1,7 @@
 source('~/code/util/mtx.r')
 
 
-impute_magic = function(data, num_pcs=20, k=30, ka=10, ep=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE){
+impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE){
     require(data.table)
 
     # Run magic imputation on TPM or log2TPM (authors use TPM)
@@ -32,7 +32,7 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, ep=1, rescale=99, sparse=
     } else {
 
         # write data
-	fns = write_mtx(t(data), temp=TRUE)
+	fns = write_mtx(as(t(data), 'sparseMatrix'), temp=TRUE)
 	files = c(files, fns$data, fns$rows, fns$cols)
 	if(is.null(out)){out = fns$data}
 	
