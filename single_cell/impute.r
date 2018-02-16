@@ -11,7 +11,7 @@ impute_magic = function(data, num_pcs=20, k=30, t=6, ka=10, eps=1, rescale=99, s
     # if is.null(out), then write to temporary file *that gets deleted*
 
     # check arguments
-    if(is.null(out) & ret == FALSE){'must specify out with ret=FALSE')}
+    if(is.null(out) & ret == FALSE){stop('must specify out with ret=FALSE')}
     
     # keep track of cells and filenames
     cells = colnames(data)
