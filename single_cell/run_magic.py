@@ -6,6 +6,9 @@ import sys
 # input = TPM or log2TPM (authors use TPM)
 # output = imputed data
 
+# Arguments
+# ---------
+
 # Get input arguments
 parser = argparse.ArgumentParser()
 parser.add_argument('--txt', help='TXT file (rows = cells, columns = features)', default='')
@@ -26,7 +29,10 @@ if args.txt == '' and args.mtx == '':
 if args.mtx != '' and args.genes == '':
     sys.exit('must specify mtx and genes')
 
-# Run phenograph
+
+# Run magic
+# ---------
+    
 if args.txt != '':
     print('Reading TXT')
     scdata = magic.mg.SCData.from_csv(args.txt, data_type='sc-seq', normalize=False)
