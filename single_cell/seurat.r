@@ -115,7 +115,7 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
 
 
 run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=1e6, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
-             min_cv2=.25,
+             min_cv2=.25, var_genes=NULL,
 	     num_genes=1500, do.batch='none', batch.use=NULL, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, dist.use='cosine', do.largevis=FALSE, largevis.k=50,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
 
@@ -130,7 +130,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     
     msg(name, 'Selecting variable genes', verbose)
     ident = seur@ident
-    var_genes = get_var_genes(seur@raw.data, ident=ident, method=varmet, num_genes=num_genes, min_ident=25)
+    if(is.null(var_genes)){var_genes = get_var_genes(seur@raw.data, ident=ident, method=varmet, num_genes=num_genes, min_ident=25)}
     if(!is.null(var_regexv)){var_genes = grep(var_regexv, var_genes, invert=T, value=T)}
     msg(name, sprintf('Found %d variable genes', length(var_genes)), verbose)
     seur@var.genes = intersect(var_genes, rownames(seur@data))

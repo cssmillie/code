@@ -1,7 +1,8 @@
 source('~/code/util/mtx.r')
+source('~/code/sge/rsub.r')
 
 
-impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE){
+impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE, qsub=FALSE, m=32, t='2:00:00', ...){
     require(data.table)
 
     # Run magic imputation on TPM or log2TPM (authors use TPM)
@@ -12,14 +13,17 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse
 
     # check arguments
     if(is.null(out) & ret == FALSE){stop('must specify out with ret=FALSE')}
-    if(dir.exists(out)){stop('invalid outfile (is a directory)')}
-    if(file.exists(out)){cat('\n*warning* will overwrite outfile\n')}
-    
+    if(!is.null(out)){
+        if(dir.exists(out)){stop('invalid outfile (is a directory)')}
+	if(file.exists(out)){cat('\n*warning* will overwrite outfile\n')}
+    }
+        
     # keep track of cells and filenames
     cells = colnames(data)
     files = c()
     
     # write data
+    print('Writing data')
     if(sparse == FALSE){
         
         # write data
@@ -42,12 +46,16 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse
 	cmd = paste('python ~/code/single_cell/run_magic.py --mtx', fns$data, '--genes', fns$cols)
     }
     
-    # run magic
+    # magic command
     cmd = paste(cmd, '-p', num_pcs, '-k', k, '--ka', ka, '-e', eps, '-r', rescale, '--out', out)
-    system(cmd)
+    
+    # submit command
+    print('Running magic')
+    if(qsub == TRUE){rsub(cmd, H='use .tcltk8.6.4', m=m, t=t, ...)} else {system(cmd)}
     
     # load results
     if(ret == TRUE){
+        print('Loading results')
         data = ffread(out, sep=',')
         data = t(data)
         colnames(data) = cells
@@ -56,6 +64,7 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse
     }
     
     # cleanup files
+    print('Cleanup')
     for(fn in fns){system(paste0('rm ', fn))}
     
     # return results

@@ -56,6 +56,19 @@ sparse_rbind = function(M){
 }
 
 
+fast_rnorm = function(x){
+    require(wordspace)
+    scaleMargins(x, rows=1/rowSums(x))
+}
+
+
+fast_cnorm = function(x){
+    require(wordspace)
+    scaleMargins(x, cols=1/colSums(x))
+}
+
+
+
 mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
 
     # Get sparse matrix filenames from prefix and patterns

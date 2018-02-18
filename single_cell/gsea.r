@@ -8,7 +8,7 @@ fast_gsea = function(ranks, pathways='~/aviv/db/gsea/pathways.rds', minSize=10, 
     # inputs:
     # ranks = list(gene1 = pval, gene2 = pval)
     # pathways = list(db1 = list(sig1 = genes, sig2 = genes, ...), db2 = list(sig1 = genes, sig2 = genes, ...))
-
+    
     # notes:
     # this function should be run on ranks from full gene universe, e.g.
     # markers = markers[pvalH < .05]

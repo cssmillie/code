@@ -196,7 +196,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	t2 = s2/total
 	
 	# fix zeros for logs
-	zero = .5*min(tpm[tpm > 0])/(sum(i) + sum(j))
+	zero = .5*min(tpm@x)/(sum(i) + sum(j)) # fast min(sparse matrix)
 	m1 = m1 + .5*zero
 	m2 = m2 + .5*zero
 	u1 = u1 + .5*zero
@@ -204,7 +204,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	
 	# log fold change
 	log2fc = log2(u1) - log2(u2)
-
+	
 	if(do.ratio == TRUE){
 
 	    # calculate ratio for group of interest
@@ -331,17 +331,17 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     
     if(filter_genes == TRUE){
     
-    # Expression stats
-    stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic,
-                             do.ratio=do.ratio, samples=samples, bg_tpm=bg_tpm)
+        # Expression stats
+        stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic,
+                                 do.ratio=do.ratio, samples=samples, bg_tpm=bg_tpm)
     
-    # Select genes
-    genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
-    if(length(genes.use) == 0){return(c())}
-    if(length(genes.use) <  5){genes.use = unique(c(genes.use, names(sort(rowSums(tpm), decreasing=T)[1:5])))}
-    
+        # Select genes
+        genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
+        if(length(genes.use) == 0){return(c())}
+        if(length(genes.use) <  5){genes.use = unique(c(genes.use, names(sort(rowSums(tpm), decreasing=T)[1:5])))}
+        
     } else {
-    
+        
 	stats = NULL
 	genes.use = rownames(data)
     }

@@ -176,7 +176,7 @@ class Submitter():
         self.users = [user if user != self.me else '' for user in self.u]
         
         # cluster parameters
-        self.stat_cmd = 'qstat -g d -u {} | egrep -v "^job|^-"'.format(','.join(self.users + [self.me]))
+        self.stat_cmd = 'qstat -g d -u %s | egrep -v "^job|^-"' %(','.join(self.users + [self.me]))
         self.submit_cmd = 'qsub'
         self.parse_job = lambda x: re.search('Your job-array (\d+)', x).group(1)
 
@@ -196,7 +196,7 @@ class Submitter():
             cmd = 'ssh %s@%s "cd %s; %s"' %(user, self.s, cwd, cmd)
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=open(os.devnull, 'w'), shell=True)
         [out, err] = process.communicate()
-        return out.decode('utf-8')
+        return out
     
     
     def qstat(self):
@@ -223,9 +223,9 @@ class Submitter():
         
         # submit job
         cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, task_ids, self.P, array)
-        print(cmd)
+        print cmd
         out = self.system(cmd, user=u)
-        print(out)
+        print out
         
         # update tasks
         job_id = self.parse_job(out)
@@ -364,10 +364,10 @@ class Submitter():
             if self.g == True:
                 groups = self.group_tasks_by_resources(tasks)
             else:
-                groups = dict(list(zip(list(range(len(tasks))), [[task] for task in tasks])))
+                groups = dict(zip(range(len(tasks)), [[task] for task in tasks]))
             
             # submit each resource group
-            for tasks in list(groups.values()):
+            for tasks in groups.values():
                 self.writer.write_error(tasks=tasks)
                 self.qsub(tasks)
             
@@ -451,7 +451,7 @@ class Writer():
         # write array
         with open(array, 'w') as fh:
             fh.write(text)
-        os.chmod(array, 0o644)
+        os.chmod(array, 0644)
         
         # update tasks
         for i,task in enumerate(tasks):
@@ -504,7 +504,7 @@ class Writer():
         
         # write log
         if self.verbose:
-            print(text, end=' ')
+            print text,
         self.log.write(text)
     
 
