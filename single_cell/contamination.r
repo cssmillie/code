@@ -33,8 +33,8 @@ plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NU
    	geom_text_repel(aes(label=lab), size=2, segment.color='grey') +
 	geom_rug(data=d.rug, aes(x=x), sides='t', col='black', alpha=alpha) +
 	geom_line(data=d.line, aes(x=x, y=y), lty=2) +
-	xlab(paste0('Mean TPM (non-', group, ')')) +
-    	ylab(paste0('Mean TPM (', group, ')')) +
+	xlab(paste0('Mean TPM (Non-group)')) +
+    	ylab(paste0('Mean TPM (Group)')) +
     	scale_colour_manual(values=c('lightcoral', 'black', 'steelblue3', 'lightgray')) +	
     	theme_cowplot()
     
@@ -129,7 +129,7 @@ detect_contamination = function(tpm, groups, samples, global_coefs=NULL, fit.n=5
 
 
 full_detect_contamination = function(tpm, idents, groups, samples, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test'){
-
+    
     # fit models to cell groups
     cat('\n\nDetect contamination\n\n')
     cat('\nFitting group models\n')
@@ -148,5 +148,5 @@ full_detect_contamination = function(tpm, idents, groups, samples, fit.n=50, fit
     res.idents = detect_contamination(tpm, idents, samples, global_coefs=global_coefs, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix)
     
     # return all data
-    return(res.groups=res.groups, res.idents=res.idents)
+    return(list(res.groups=res.groups, res.idents=res.idents))
 }
