@@ -106,12 +106,13 @@ select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_ce
 }
 
 
-select_genes = function(seur, stats, genes.use=NULL, min_cells=3, min_alpha=.025, min_fc=1.2, dir='both'){
+select_genes = function(seur, stats, data.use=NULL, genes.use=NULL, min_cells=3, min_alpha=.025, min_fc=1.2, dir='both'){
 
     # Select genes from Seurat object by cells, genes.use, min_cells, min_alpha, and min_fc
     
     # Select genes by genes.use
-    if(is.null(genes.use)){genes.use = rownames(seur@data)}
+    if(is.null(data.use)){data.use = seur@data}
+    if(is.null(genes.use)){genes.use = rownames(data.use)}
     
     # Select genes by min_cells
     g1 = as.character(stats[, (max(n) >= min_cells) | (max(ref_n) >= min_cells), .(gene)][V1 == TRUE, gene])
@@ -132,7 +133,7 @@ select_genes = function(seur, stats, genes.use=NULL, min_cells=3, min_alpha=.025
 }
 
 
-expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL, cells.use=NULL, invert_method='auto', invert_logic='last', do.ratio=FALSE, samples=NULL, bg_tpm=NULL){
+expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL, cells.use=NULL, invert_method='auto', invert_logic='last'){
     
     # Calculate expression statistics for groups specified by formula
     # each column of the model matrix is either a single term A or an interaction term A:B
@@ -196,7 +197,11 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	t2 = s2/total
 	
 	# fix zeros for logs
-	zero = .5*min(tpm@x)/(sum(i) + sum(j)) # fast min(sparse matrix)
+	if(class(tpm) == 'dgCMatrix'){
+	    zero = .5*min(tpm@x)/(sum(i) + sum(j)) # fast min (sparse matrix)
+	} else {
+	    zero = .5*min(tpm)/(sum(i) + sum(j)) # slow min (other matrix)
+	}
 	m1 = m1 + .5*zero
 	m2 = m2 + .5*zero
 	u1 = u1 + .5*zero
@@ -205,24 +210,8 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	# log fold change
 	log2fc = log2(u1) - log2(u2)
 	
-	if(do.ratio == TRUE){
-
-	    # calculate ratio for group of interest
-	    f1 = table(samples[colnames(tpm)[i]])
-	    f1 = f1/sum(f1)
-	    b1 = colSums(t(bg_tpm[,names(f1),drop=F])*as.vector(f1))	    
-	    r1 = u1/b1[names(u1)]
-
-	    # calculate ratio for reference group
-	    f2 = table(samples[colnames(tpm)[j]])
-	    f2 = f2/sum(f2)
-	    b2 = colSums(t(bg_tpm[,names(f2),drop=F])*as.vector(f2))
-	    r2 = u2/b2[names(u2)]
-	    
-	} else {r1 = r2 = NA}
-	
 	# combine in data frame
-	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=log2(m1), ref_mu=log2(m2), mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc, ratio=r1, ref_ratio=r2)
+	res = data.frame(gene=rownames(tpm), contrast=a, ref=ref, n=n1, ref_n=n2, alpha=a1, ref_alpha=a2, mu=log2(m1), ref_mu=log2(m2), mean=log2(u1), ref_mean=log2(u2), total=t1, ref_total=t2, log2fc=log2fc)
 	return(res)
     })
     stats = as.data.table(do.call(rbind, stats))
@@ -275,9 +264,10 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
 }
 
 
-p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000, batch.use=NULL,
+p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000,
+                          batch.use=NULL,
 	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1,
-			  filter_genes=TRUE, do.ratio=FALSE, samples=NULL){
+			  filter_genes=TRUE){
     
     # Build covariates
     print(c(ident.1, ident.2))
@@ -304,46 +294,27 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
     # Select cells
     cells.use = select_cells(seur, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
     
-    # Mean TPM for contamination ratio [genes x samples]
-    if(do.ratio == TRUE){
-        
-        # Fix samples
-	if(is.null(samples)){
-	    samples = as.character(seur@data.info$orig.ident)
-	}
-	if(is.null(names(samples))){
-	    names(samples) = colnames(seur@data)
-	}
-	print(table(samples))
-	
-	# Background TPM
-	bg_tpm = t(get_data(seur, data.use='tpm', tpm=tpm, cells.use=colnames(seur@data)))
-	bg_tpm = sapply(unique(samples), function(a) colMeans(bg_tpm[samples == a,]))
-	if(!is.null(genes.use)){bg_tpm = bg_tpm[genes.use,,drop=F]}
-    
-    } else {bg_tpm = NULL}
-    
     # TPM for log fold changes [genes x cells]
-    tpm = get_data(seur, data.use='tpm', tpm=tpm, cells.use=cells.use)
+    tpm = get_data(seur, data.use=tpm.use, tpm=tpm, cells.use=cells.use)
     
     # Data for DE test [genes x cells]
     data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use)
     
     if(filter_genes == TRUE){
-    
+        
         # Expression stats
-        stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic,
-                                 do.ratio=do.ratio, samples=samples, bg_tpm=bg_tpm)
-    
+        stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
+	
         # Select genes
-        genes.use = select_genes(seur, stats, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
+        genes.use = select_genes(seur, stats, data.use=data, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
         if(length(genes.use) == 0){return(c())}
-        if(length(genes.use) <  5){genes.use = unique(c(genes.use, names(sort(rowSums(tpm), decreasing=T)[1:5])))}
         
-    } else {
-        
-	stats = NULL
-	genes.use = rownames(data)
+    } else {stats = NULL; genes.use = rownames(data)}
+    
+    # Add highly expressed genes
+    if(length(setdiff(rownames(tpm), genes.use)) > 10){
+        genes.add = names(sort(rowSums(tpm[na.omit(setdiff(rownames(tpm), genes.use)[1:1000]), na.omit(colnames(tpm)[1:100])]), decreasing=T)[1:10])
+        genes.use = unique(c(genes.add, genes.use))
     }
     
     # FDR stats
@@ -395,6 +366,7 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, data.use='log2', gen
 
     # Add ident
     markers$ident = paste(ident.1, ident.2, sep=';')
+    markers$ident = gsub(';$', '', markers$ident)
     
     # Return marker genes
     return(markers)
@@ -464,70 +436,6 @@ p.pairwise_all_markers = function(seur, data.use='log2', tpm=NULL, n.cores=1, ..
 	},
 	n.cores = n.cores
     )
-}
-
-
-specific_markers = function(seur, markers, ident.use=NULL, test.use='mast', data.use='log2', tpm=NULL, n.cores=1, ...){
-    
-    # Check arguments
-    markers[, ident := gsub(':.*', '', gsub('ident', '', contrast))]    
-    markers[, keep := TRUE]
-    if(! 'pvalH' %in% colnames(markers) | test.use != 'mast'){stop('test.use != mast')}
-    
-    # Get cell identities
-    idents = as.character(levels(seur@ident))
-    if(is.null(ident.use)){
-        ident.use = idents
-    }
-    remove = setdiff(idents, unique(markers$ident))
-    if(length(remove) > 0){print(paste('Removing', paste(remove, sep=', ')))}
-    idents = intersect(idents, unique(markers$ident))
-    
-    # Pre-calculate TPM
-    tpm = get_data(seur, data.use='tpm', tpm=tpm)
-    
-    # Pre-calculate data
-    data = get_data(seur, data.use=data.use, tpm=tpm)
-    
-    # Find marker genes
-    for(i in ident.use){
-
-        # Sort comparisons by overlapping genes
-        js = setdiff(idents, i)
-	js = rev(names(sort(sapply(js, function(j) length(intersect(markers[ident == i, gene], markers[ident == j, gene]))))))
-		
-        for(j in js){
-	    
-	    # get genes to test
-	    genes.1 = markers[ident == i & keep == TRUE, gene]
-	    genes.2 = markers[ident == j & keep == TRUE, gene]
-	    genes.use = intersect(genes.1, genes.2)
-	    if(length(genes.use) == 0){next}
-	    print(paste(i, j, 'testing', length(genes.use), 'genes'))	    
-	    
-	    # get lrt_regex
-	    lrt_regex = paste(paste0(unique(markers[ident == i, contrast]), '$'), collapse='|')
-	    	    
-	    # run marker test
-	    mi = p.find_markers(seur, ident.1=i, ident.2=j, tpm=tpm, data.use=data, genes.use=genes.use, dir='pos', test.use='mast', do.stats=F, min_fc=0, lrt_regex=lrt_regex, ...)
-	    
-	    # update genes to keep
-	    if(is.null(mi)){
-	        genes.remove = genes.use
-	    } else {
-	        genes.keep = mi[((pvalD <= .05 & coefD > 0) | (pvalC <= .05 & coefC > 0)) & log2fc > 0, gene]
-	        genes.remove = setdiff(genes.use, genes.keep)
-	    }
-	    
-	    print(paste('Removing', paste(genes.remove, collapse=', ')))
-	    markers[ident == i & gene %in% genes.remove]$keep = FALSE
-	    print(paste('Keeping', paste(markers[ident == i & keep == TRUE, gene], collapse=', ')))
-	    print(paste('ident', i, 'found', sum(markers[ident == i, keep]), 'genes'))
-	    print(dim(markers))
-	}
-    }
-    markers = markers[ident %in% ident.use,]    
-    return(markers)
 }
 
 
@@ -612,7 +520,7 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     
     load_mast()
     options(mc.cores=n.cores)
-
+        
     # Make single cell assay (SCA) object
     fdata = data.frame(matrix(rep(1, nrow(data))))
     covariates = as.data.frame(covariates)
@@ -623,7 +531,7 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
         formula = paste('~' , paste(colnames(covariates), collapse=' + '))
     }
     formula = as.formula(formula)
-    zlm.obj = zlm(formula, sca)
+    zlm.obj = zlm(formula, sca, force=TRUE)
     
     # Likelihood ratio test
     if(is.logical(lrt_regex)){lrt_regex = colnames(covariates)}
@@ -698,58 +606,75 @@ filter_mast = function(markers, regex=NULL, pval=NULL, padj=NULL, min_log2fc=NUL
 
 collapse_markers = function(m){
 
-    # Collapse markers on (contrast, gene) using mean or [[1]]
+    # Collapse markers on (contrast, gene)
+    # For numeric columns, collapse rows using "mean"
+    # For non-numeric columns, take the first element
     
-    # track colnames
+    # Track colnames
     a = colnames(m)
     
-    # split columns by numeric
+    # Split columns by numeric
     j = sapply(m, is.numeric)
     u = m[, c('contrast', 'gene', names(which(j))), with=F]
     v = m[, names(which(!j)), with=F]
 
-    # mean or [[1]] columns
+    # Mean or [[1]] columns
     u = u[, lapply(.SD, mean), .(contrast, gene)]
     v = v[, .SD[1,], .(contrast, gene)]
 
-    # merge lists
+    # Merge columns and re-order with "a"
     setkey(u, contrast, gene)
     setkey(v, contrast, gene)
     m = u[v][,a,with=F]
-
-    # order by contrast and pvalH
-    m[order(contrast, pvalH)]
+    
+    # Order results by contrast and gene
+    m[order(contrast, gene)]
 }
 
-next_stats = function(markers, min_pval=1, min_padj=1, anno=NULL){
 
-    # for each ident/gene, calculate next statistics using all non-overlapping idents
-    # non-overlapping idents calculated using select_keys(anno, i, invert=T)
-    # example: load_anno(key='name', value='ident')
-    # optionally filter the marker matrix to keep only significant markers
+next_stats = function(markers, anno=NULL, filter=identity){
     
-    # filter marker lists (optionally)
-    markers = markers[(pvalD <= min_pval | pvalC <= min_pval)]
-    markers = markers[(padjD <= min_pval | padjC <= min_pval)]
+    # For each ident/gene, calculate "same" and "next" statistics
+    # "same" stats = highest stats within the group
+    # "next" stats = highest stats outside of group
+    # "same_log2fc" = (highest in-group mean) - (highest out-group mean)
+    # "next_log2fc" = (group mean) - (highest out-group mean)
+    # Finds overlapping idents with select_keys(anno, ...)
+    # - example anno: load_anno(key='name', value='ident')
+    # Optionally provide function to filter markers in "same" group
+    # - example: f=function(m){m[pvalD < .05][keep == TRUE]}
+    # *** If there is no "next" group, return infinity ***
     
-    # make and test annotations
+    # Map annotations
     idents = sort(unique(markers$ident))
     if(is.null(anno)){anno = structure(idents, names=idents)}
     if(any(! idents %in% names(anno))){stop('ident not in names(anno)')}
     
-    # initialize columns
-    markers[, c('next_alpha', 'next_mu', 'next_mean', 'next_log2fc') := as.numeric(NA)]
+    # Set data table key
     setkeyv(markers, c('ident', 'gene'))
-    # test if keys are unique
     if(nrow(markers) != uniqueN(markers[,.(ident, gene)])){stop('(ident, gene) not unique')}
     
-    # iterate over idents
+    # Iterate over names in "ident" column
     idents = sort(unique(markers$ident))
     for(i in idents){
-        j = select_keys(anno, i, invert=T)
-	m = markers[ident %in% j][, list(next_alpha=max(alpha), next_mu=max(mu), next_mean=max(mean)), .(gene)]
-	markers[.(i, m$gene), c('next_alpha', 'next_mu', 'next_mean') := m[,.(next_alpha, next_mu, next_mean)]]
+        
+        # Add "same" stats
+	j = select_keys(anno, i)
+	m = filter(markers[ident %in% j])
+	if(nrow(m) > 0){
+	    m = m[,{i = which.max(mean); .(same_alpha=alpha[i], same_mu=mu[i], same_mean=mean[i], same_ident=ident[i])}, .(gene)]
+	    markers[.(i, m$gene), c('same_alpha', 'same_mu', 'same_mean', 'same_ident') := m[,.(same_alpha, same_mu, same_mean, same_ident)]]
+	}
+		
+	# Add "next" stats
+	j = select_keys(anno, i, invert=T)
+	m = markers[ident %in% j][,{i = which.max(mean); .(next_alpha=alpha[i], next_mu=mu[i], next_mean=mean[i], next_ident=ident[i])}, .(gene)]
+	markers[.(i, m$gene), c('next_alpha', 'next_mu', 'next_mean', 'next_ident') := m[,.(next_alpha, next_mu, next_mean, next_ident)]]
     }
-    markers$next_log2fc = markers$mean - markers$next_mean
+    
+    # Calculate fold changes
+    markers[, same_log2fc := ifelse(is.na(next_mean), Inf, same_mean - next_mean)]
+    markers[, next_log2fc := ifelse(is.na(next_mean), Inf, mean - next_mean)]
+    
     return(markers)
 }

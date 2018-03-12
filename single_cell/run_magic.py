@@ -35,17 +35,17 @@ if args.mtx != '' and args.genes == '':
 def run_magic(args):
     
     if args.txt != '':
-        print('Reading TXT')
+        print('Reading TXT', flush=True)
         scdata = magic.mg.SCData.from_csv(args.txt, data_type='sc-seq', normalize=False)
     
     if args.mtx != '':
-        print('Reading MTX')
+        print('Reading MTX', flush=True)
         scdata = magic.mg.SCData.from_mtx(args.mtx, args.genes, normalize=False)
     
-    print('Running magic')
+    print('Running magic', flush=True)
     scdata.run_magic(n_pca_components=args.p, random_pca=True, t=None, k=args.k, ka=args.ka, epsilon=args.e, rescale_percent=args.r)
     
-    print('Writing data')
+    print('Writing data', flush=True)
     scdata.magic.to_csv(args.out)
 
 

@@ -27,13 +27,26 @@ load_map = function(fn, key, value){
 
 select_keys = function(map, keys, invert=FALSE){
     
-    # Get indices of matching (or mismatching) values
-    i = sapply(map, function(v){
-        length(intersect(v, unlist(map[keys]))) > 0
+    # Find keys with matching or mismatching values
+    # Examples:
+    # > anno = load_anno(key='name', value='ident')
+    #
+    # > select_keys(anno, 'Monocytes')
+    # - All descendent nodes:
+    # - DCs, Macrophages, Monocytes (not Myeloid)
+    #
+    # > select_keys(anno, 'Monocytes', invert=T)
+    # - Non-descendent non-ancestral nodes
+    # - T cells, B cells, etc. (not Myeloid)
+    
+    i = sapply(map, function(values){
+        if(invert == FALSE){
+	    all(values %in% unlist(map[keys]))
+	} else {
+	    all(! values %in% unlist(map[keys]))
+	}
     })
-    if(invert == TRUE){i = !i}
-
-    # Return matching (or mismatching) keys
+    
     return(names(map)[i])
 }
 
@@ -53,6 +66,27 @@ flatten_keys = function(map, keys){
     others = select_keys(map, keys, invert=TRUE)
     others = others[sapply(map[others], length) == 1]
     return(c(keys, others))
+}
+
+
+basest_key = function(map, keys){
+
+    # Find the "basest" key in a tree-structured map
+    # Example:
+    # anno = load_anno(key='name', value='ident')
+    # keys = c('Tuft', 'Secretory', 'Epithelial')
+    # basest_keys(keys) = 'Tuft'
+    
+    # Test data structure
+    keys = as.character(keys)
+    test = all(sapply(map[keys], function(a) sapply(map[keys], function(b) all(a %in% b) | all(b %in% a))))
+    
+    # Return basest group
+    if(test == TRUE){
+        names(which.min(sapply(map[keys], length)))
+    } else {
+        stop('Annotation map is not hierarchically structured')
+    }
 }
 
 

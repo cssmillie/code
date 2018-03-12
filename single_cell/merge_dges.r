@@ -95,7 +95,8 @@ for(i in 1:nrow(map)){
     name = map[i,1]
     path = map[i,2]
     pattern = map[i,3]
-    dges[[path]] = read_dge(path, prefix=name, pattern=pattern, ming=args$ming, minc=args$minc, rename=args$rename)
+    dge = read_dge(path, prefix=name, pattern=pattern, ming=args$ming, minc=args$minc, rename=args$rename)
+    if(!is.null(dim(dge))){dges = c(dges, dge)}
 }
 
 
@@ -104,8 +105,15 @@ for(i in 1:nrow(map)){
 # --------------
 
 cat('\nInitializing DGE\n')
-
 x = sparse_cbind(dges)
+
+# Check for replicate cell barcodes
+if(max(table(colnames(x))) > 1){
+    cat(paste('\nMerging', ncol(x) - length(unique(colnames(x))), 'replicate cell barcodes'))
+    print(mean(colSums(x[,grep('ColFr0_Mye_3', colnames(x))])))
+    x = as(t(rowsum(t(as.matrix(x)), colnames(x))), 'sparseMatrix')
+    print(mean(colSums(x[,grep('ColFr0_Mye_3', colnames(x))])))
+}
 
 
 # ------------
@@ -123,7 +131,7 @@ cat(paste0('\nWriting DGE [', nrow(x), ' x ', ncol(x), ']\n'))
 
 # Write to file
 if(args$sparse == TRUE){    
-    write_mtx(x, path=args$out, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv')
+    write_mtx(x, prefix=args$out, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv')
 } else {
     cat('\nWriting dense matrix\n')
     require(tibble)

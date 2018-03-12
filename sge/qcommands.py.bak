@@ -10,9 +10,9 @@ def system(cmd, user='', p=False):
     if p == False:
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=open(os.devnull, 'w'), shell=True)
         [out, err] = process.communicate()
-        return out.decode('utf-8')
+        return out
     else:
-        print(cmd)
+        print cmd
 
 
 # ----------
@@ -64,7 +64,7 @@ for line in out:
 
 
 def get_time(line):
-    h,m,s = list(map(float, re.search('wallclock=(\d+):(\d+):(\d+),', line).groups()))
+    h,m,s = map(float, re.search('wallclock=(\d+):(\d+):(\d+),', line).groups())
     return 60*h + m + s/60.
 
 
@@ -107,7 +107,7 @@ for job in x:
                         y[command] = []
                     y[command].append([user, job, task, mem, time, command, err])
     except:
-        print('Could not map %s' %(job))
+        print 'Could not map %s' %(job)
 
 
 # ----------
@@ -131,6 +131,6 @@ for command in y:
         elif args.D:
             system('qdel %s -t %s' %(job, task), user=user, p=False)
         elif args.e:
-            print(err)
+            print err
         else:
-            print('\t'.join(map(str, [user, job, task, mem, time, command])))
+            print '\t'.join(map(str, [user, job, task, mem, time, command]))

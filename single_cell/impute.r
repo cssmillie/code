@@ -2,7 +2,7 @@ source('~/code/util/mtx.r')
 source('~/code/sge/rsub.r')
 
 
-impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE, qsub=FALSE, m=32, t='2:00:00', ...){
+impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse=TRUE, do.log=FALSE, out=NULL, ret=TRUE, cleanup=TRUE, qsub=FALSE, m=32, t='2:00:00', ...){
     require(data.table)
 
     # Run magic imputation on TPM or log2TPM (authors use TPM)
@@ -45,12 +45,15 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse
 	# magic command
 	cmd = paste('python ~/code/single_cell/run_magic.py --mtx', fns$data, '--genes', fns$cols)
     }
+    print('Writing data')
+    print(files)
     
     # magic command
     cmd = paste(cmd, '-p', num_pcs, '-k', k, '--ka', ka, '-e', eps, '-r', rescale, '--out', out)
     
     # submit command
     print('Running magic')
+    print(cmd)
     if(qsub == TRUE){rsub(cmd, H='use .tcltk8.6.4', m=m, t=t, ...)} else {system(cmd)}
     
     # load results
@@ -65,7 +68,7 @@ impute_magic = function(data, num_pcs=20, k=30, ka=10, eps=1, rescale=99, sparse
     
     # cleanup files
     print('Cleanup')
-    for(fn in fns){system(paste0('rm ', fn))}
+    if(cleanup == TRUE){for(fn in fns){system(paste0('rm ', fn))}}
     
     # return results
     return(data)

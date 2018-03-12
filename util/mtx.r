@@ -7,17 +7,16 @@ sparse_cbind = function(M){
     rows = unique(sort(unlist(sapply(M, rownames))))
     x = Matrix(0, nrow=length(rows), sparse=T)
     rownames(x) = rows
-
+    
     # Fast merge with rbind/cbind
-    for(name in names(M)){
-
-        # Align data
-        m = M[[name]]
+    for(m in M){
+        
+        # Align rows
 	n = Matrix(0, nrow=length(rows)-nrow(m), ncol=ncol(m), sparse=T)
 	rownames(n) = setdiff(rows, rownames(m))
 	m = rbind(m, n)
 	m = m[rows,,drop=F]
-
+	
 	# Combine data
 	x = cbind(x, m)
     }
@@ -37,10 +36,9 @@ sparse_rbind = function(M){
     colnames(x) = cols
 
     # Fast merge with rbind/cbind
-    for(name in names(M)){
+    for(m in M){
 
-        # Align data
-	m = M[[name]]
+        # Align columns
 	n = Matrix(0, ncol=length(cols)-ncol(m), nrow=nrow(m), sparse=T)
 	colnames(n) = setdiff(cols, colnames(m))
 	m = cbind(m, n)
@@ -68,7 +66,6 @@ fast_cnorm = function(x){
 }
 
 
-
 mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
 
     # Get sparse matrix filenames from prefix and patterns
@@ -89,6 +86,7 @@ mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barc
     
     return(list(data=data, rows=rows, cols=cols))
 }
+
 
 read_mtx = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=FALSE){
 
@@ -111,6 +109,7 @@ read_mtx = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.
     
     return(data)
 }
+
 
 write_mtx = function(x, prefix='.', data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', temp=FALSE){
 

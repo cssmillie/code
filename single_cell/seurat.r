@@ -1,9 +1,12 @@
 require(Seurat)
 require(Matrix)
 require(methods)
+require(data.table)
+require(tibble)
 
 source('~/code/single_cell/batch.r')
 source('~/code/single_cell/cluster.r')
+source('~/code/single_cell/contamination.r')
 source('~/code/single_cell/dmap.r')
 source('~/code/single_cell/downsample.r')
 source('~/code/single_cell/gsea.r')
@@ -12,6 +15,7 @@ source('~/code/single_cell/markers.r')
 source('~/code/single_cell/parallel.r')
 source('~/code/single_cell/pca.r')
 source('~/code/single_cell/plot.r')
+source('~/code/single_cell/specific.r')
 source('~/code/single_cell/tsne.r')
 source('~/code/single_cell/var_genes.r')
 source('~/code/util/mtx.r')
@@ -28,6 +32,7 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
     # Load packages
     require(data.table)
     require(Matrix)
+    source('~/code/util/mtx.r')
     
     # Set graphics device
     options(device=pdf)
@@ -35,31 +40,38 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
     # Load counts from Seurat object, matrix, or file
     msg(name, 'Loading DGE', verbose)
     if(typeof(dge) == typeof('')){
-	counts = fread(paste('zcat', dge))
-	counts = data.frame(counts, row.names=1)
+        if(file.exists(dge)){
+	    counts = fread(paste('zcat', dge))
+	    counts = data.frame(counts, row.names=1)
+	} else {
+	    counts = read_mtx(prefix=dge)
+	}
     } else {
 	counts = dge
     }
     msg(name, sprintf('DGE = %d x %d', nrow(counts), ncol(counts)), verbose)
     
-    # Subset DGE with regex, genes.use, and cells.use
+    # Subset DGE with NA, regex, genes.use, and cells.use
     msg(name, 'Subsetting DGE', verbose)
     if(regex != ''){
         j = grep(regex, colnames(counts))
-	counts = counts[,j]
+	counts = counts[,j,drop=F]
     }
     if(regexv != ''){
         j = grep(regexv, colnames(counts), invert=T)
-	counts = counts[,j]
+	counts = counts[,j,drop=F]
     }
     if(!is.null(genes.use)){
 	genes.use = intersect(rownames(counts), genes.use)
-	counts = counts[genes.use,]
+	counts = counts[genes.use,,drop=F]
     }
     if(!is.null(cells.use)){
 	cells.use = intersect(colnames(counts), cells.use)
-	counts = counts[,cells.use]
+	counts = counts[,cells.use,drop=F]
     }
+    genes.use = rowSums(is.na(counts)) == 0
+    counts = counts[genes.use,,drop=F]
+    
     msg(name, sprintf('DGE = %d x %d', nrow(counts), ncol(counts)), verbose)
     
     # Convert counts to sparse matrix
@@ -84,7 +96,7 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
     msg(name, 'Filtering DGE', verbose)
     j1 = colSums(counts > 0) >= ming
     j2 = colSums(counts > 0) <= maxg
-    counts = counts[, (j1 & j2)]
+    counts = counts[,(j1 & j2)]
     i = rowSums(counts > 0) >= minc
     counts = counts[i,]
     msg(name, sprintf('DGE = %d x %d', nrow(counts), ncol(counts)), verbose)
@@ -220,8 +232,8 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     if(write_out){
 
         # Batch corrected data
-	if(do.batch != 'none'){write.table(bc.data, file=paste0(name, '.bc.dge.txt'), sep='\t', quote=F)}
-
+	if(do.batch != 'none'){fwrite(as.data.table(bc.data), file=paste0(name, '.bc.dge.txt'), sep='\t')}
+	
 	# PCA loaded genes
 	write.table(loaded_genes, paste0(name, '.loaded_genes.txt'), sep='\t', quote=F)
 

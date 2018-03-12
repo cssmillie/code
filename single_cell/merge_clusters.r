@@ -1,6 +1,10 @@
 
-merge_clusters = function(seur, min_auc=.65, k=10){
+merge_clusters = function(seur, auc_k=10, auc_cut=.65, batch_k=3, batch_pct=100){
     
+    # Iteratively compare "nearest" clusters and merge if:
+    # 1) top [auc_k] markers have AUC < [auc_cut]
+    # 2) top [batch_k] samples make up > [batch_pct] of cluster
+
     finished = c()
     iter = 0
     pca.rot = seur@pca.rot
@@ -16,7 +20,7 @@ merge_clusters = function(seur, min_auc=.65, k=10){
 	dist = as.matrix(dist(data))
 	
 	# batch effects
-	batch_remove = tapply(batch, ident, function(a){b=sort(table(a), decreasing=T); sum(b[1:3])/sum(b) >= .85})
+	batch_remove = tapply(batch, ident, function(a){b=sort(table(a), decreasing=T); sum(b[1:batch_k])/sum(b) >= batch_pct/100.0})
 	print(paste(sum(batch_remove), 'batch idents'))
 	
 	# nearest neighbors
@@ -56,11 +60,11 @@ merge_clusters = function(seur, min_auc=.65, k=10){
 	    
 	    # test markers
 	    m = p.find_markers(seur, ci, cj, test.use = 'roc', dir='both', min_fc=2)
-	    auc_hi = sort(na.omit(m$auc), decreasing=T)[k]
-	    auc_lo = sort(na.omit(m$auc), decreasing=F)[k]
+	    auc_hi = sort(na.omit(m$auc), decreasing=T)[auc_k]
+	    auc_lo = sort(na.omit(m$auc), decreasing=F)[auc_k]
 	    print(paste('AUC', auc_hi, auc_lo))
-	    print(paste('CUT', min_auc, 1-min_auc))
-	    if(auc_hi < min_auc & auc_lo > (1 - min_auc)){
+	    print(paste('CUT', auc_cut, 1-auc_cut))
+	    if(auc_hi < auc_cut & auc_lo > (1 - auc_cut)){
 	        print(paste('Marker merge', ci, cj))
 	        ident[ident %in% c(ci, cj)] = cn
 		seur = set.ident(seur, ident.use=ident)

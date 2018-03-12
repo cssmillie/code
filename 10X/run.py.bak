@@ -45,12 +45,12 @@ if not serial:
     quit('No flowcell serial')
 
 # Extract sample index from filename
-print('Predicted serial: %s' %(serial))
+print 'Predicted serial: %s' %(serial)
 if not args.fastq:
     fastq_path = './%s/outs/fastq_path/' %(serial)
 else:
     fastq_path = args.fastq
-print('Predicted FASTQ path: %s' %(fastq_path))
+print 'Predicted FASTQ path: %s' %(fastq_path)
 
 # Get sample names
 samples = [line.rstrip().split(',')[1] for line in open(args.csv) if not line.startswith('Lane')]
@@ -162,7 +162,7 @@ Ssub.m = args.m
 ssub.p = args.p
 
 for group in pipeline:
-    print('\n'.join(group))
+    print '\n'.join(group)
 
 for cmd in pipeline:
     Ssub.add_task(cmd)

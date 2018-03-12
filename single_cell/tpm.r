@@ -51,7 +51,8 @@ calc_tpm = function(seur=NULL, data=NULL, genes.use=NULL, cells.use=NULL, total=
     # Intersect genes.use and cells.use
     genes.use = intersect(genes.use, rownames(data))
     cells.use = intersect(cells.use, colnames(data))
-    print(dim(data))
+
+    # Predict log base
     base = predict_log_base(data[, sample(1:ncol(data), 2)])
     
     if(base == 'counts'){

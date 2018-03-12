@@ -2,8 +2,11 @@ require(data.table)
 source('~/code/single_cell/tpm.r')
 
 
-fast_gsea = function(ranks, pathways='~/aviv/db/gsea/pathways.rds', minSize=10, maxSize=500, nperm=1000){
+fast_gsea = function(ranks, pathways=NULL, regex='BP|MF|CC|hallmark|canonical', minSize=5, maxSize=500, nperm=1000, gseaParam=1){
+
     require(fgsea)
+    hpath = '~/aviv/db/gsea/human.gsea_pathways.rds'
+    mpath = '~/aviv/db/gsea/mouse.gsea_pathways.rds'
     
     # inputs:
     # ranks = list(gene1 = pval, gene2 = pval)
@@ -14,22 +17,37 @@ fast_gsea = function(ranks, pathways='~/aviv/db/gsea/pathways.rds', minSize=10, 
     # markers = markers[pvalH < .05]
     # ranks = structure(markers$log2fc, names=markers$gene)
     
+    # convert markers to ranks
+    if('gene' %in% colnames(ranks) & 'coefD' %in% colnames(ranks)){
+        ranks = ranks[pvalD < .05]
+	ranks = structure(ranks$coefD, names=ranks$gene)
+    }
+    
     # load default pathways
-    if(!is.list(pathways)){pathways = readRDS(pathways)}
+    if(!is.list(pathways)){
+        org = predict_organism(names(ranks)[1:min(length(ranks), 10)])
+	if(org == 'human'){pathways = readRDS(hpath)} else {pathways = readRDS(mpath)}
+    }
+    pathways = pathways[grep(regex, names(pathways))]
+    print(names(pathways))
     
     gsea = list()
 
     # run gsea on each set of pathways
     for(name in names(pathways)){
-        print(paste(name, 'testing', length(pathways[[name]]), 'gene sets'))
 
-	# intersect pathway with gene universe
+        # filter pathways by size
 	pathway = pathways[[name]]
+	sizes = sapply(pathway, length)
+	pathway = pathway[minSize <= sizes & sizes <= maxSize]
+	print(paste(name, 'testing', length(pathway), 'gene sets'))
+	
+	# intersect with gene universe
 	pathway = sapply(pathway, function(a) intersect(a, names(ranks)))
-
-	# run gsea and sort by pvalue
-        res = fgsea(pathways=pathways[[name]], stats=ranks, nperm=nperm, minSize=minSize, maxSize=maxSize)
-	res = res[order(res$pval),]
+	
+	# run gsea and sort by NES
+        res = fgsea(pathways=pathway, stats=ranks, nperm=nperm, minSize=minSize, maxSize=maxSize, gseaParam=gseaParam)
+	res = res[order(-1*res$NES),]
 	gsea[[name]] = res
     }
     
@@ -71,55 +89,181 @@ fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Panthe
 }
 
 
-gsea_heatmap = function(terms=NULL, names=NULL, genes=NULL, max_names=50, min_genes=2, show_tree=FALSE, fix_names=TRUE, out=NULL, ...){
-    require(NMF)
+gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms=50, max_genes=200, min_genes_per_term=2, max_genes_per_term=20, font_size=8, fix_names=TRUE,
+                        xstag=FALSE, ystag=FALSE, xsec=FALSE, ysec=FALSE, auto_condense='cols', out=NULL, nrow='auto', ncol='auto', dir='pos', ...){
+    require(tibble)
     
-    if(!is.null(terms)){
-        if('Term' %in% colnames(terms) & 'Genes' %in% colnames(terms)){
-            names = terms$Term
-	    genes = terms$Genes
-	}
-	if('pathway' %in% colnames(terms) & 'leadingEdge' %in% colnames(terms)){
-	    names = terms$pathway
-	    genes = terms$leadingEdge
-	}
+    # Plot heatmap of GSEA results (terms x genes)
+    # automatically select terms and genes within specified bounds
+    # optionally color using named list of genes
+    
+    # Get data to plot
+    if('Term' %in% colnames(gsea) & 'Genes' %in% colnames(gsea)){
+        terms = gsea$Term
+	genes = gsea$Genes
     }
     
-    # Split genes by [,; ]
+    if('pathway' %in% colnames(gsea) & 'leadingEdge' %in% colnames(gsea)){
+        gsea = gsea[pval <= max_pval,]
+	if(nrow(gsea) == 0){return(NULL)}
+	if(dir == 'pos'){gsea = gsea[NES >= 0]}
+	if(dir == 'neg'){gsea = gsea[NES <= 0]}
+	terms = gsea$pathway
+	genes = gsea$leadingEdge
+	pvals = -log10(gsea$pval)
+    }
+    
+    # Split genes
     if(! is.list(genes)){genes = strsplit(genes, ',|;| ')}
+    genes = sapply(genes, function(a) na.omit(a[1:max_genes_per_term]))
     
-    # Filter terms
-    i = sapply(genes, length) >= min_genes
-    names = names[i]
+    # Filter by minimum genes per term
+    i = sapply(genes, length) >= min_genes_per_term
+    terms = terms[i]
     genes = genes[i]
+    pvals = pvals[i]
+    if(length(terms) <= 1 | length(genes) <= 1){return(NULL)}
     
-    if(length(names) > max_names){
-        names = names[1:max_names]
-	genes = genes[1:max_names]
+    # Filter by maximum total genes
+    for(i in 1:length(genes)){if(length(unique(unlist(genes[1:i]))) >= max_genes){break}}
+    terms = terms[1:(i-1)]
+    genes = genes[1:(i-1)]
+    pvals = pvals[1:(i-1)]
+    if(length(terms) <= 1 | length(genes) <= 1){return(NULL)}
+    
+    # Filter by maximum total terms
+    if(length(terms) >= max_terms){
+        terms = terms[1:max_terms]
+	genes = genes[1:max_terms]
+	pvals = pvals[1:max_terms]
     }
-
+    
     # Get all genes
     all_genes = sort(unique(unlist(genes)))
-
+    
     # Fix names
     if(fix_names == TRUE){
-        names = gsub('\\(GO[^\\)]*\\)', '', names)
-	names = gsub('positive', 'pos', names)
-	names = gsub('negative', 'neg', names)
-	names = gsub('regulation', 'reg', names)
-	names = gsub('response', 'resp', names)
-	names = gsub('signaling', 'sig', names)
-	names = gsub('interaction', 'ix', names)
-	names = substr(names, 1, 40)
+        terms = gsub('GO[^\\)]*;', '', terms)
+	terms = gsub('positive', 'pos', terms)
+	terms = gsub('negative', 'neg', terms)
+	terms = gsub('regulation', 'reg', terms)
+	terms = gsub('response', 'resp', terms)
+	terms = gsub('signaling', 'sig', terms)
+	terms = gsub('interaction', 'ix', terms)
+	terms = gsub('DOWN', 'down', gsub('UP', 'up', terms))
+	terms = make.unique(substr(terms, 1, 45))
     }
     
-    # Incidence matrix
-    x = t(sapply(genes, function(gi) all_genes %in% gi))
-    rownames(x) = names
-    colnames(x) = all_genes
+    # Get colors
+    if(is.null(colors) & !is.null(markers)){colors = structure(markers$coefD, names=markers$gene); legend.title='coefD'}
+    if(is.null(colors)){colors = structure(rep(1, length(all_genes)), names=all_genes); legend.title='Presence'}
     
-    # Make heatmap
-    aheatmap(ifelse(x == TRUE, 1, 0), scale='none', hclustfun='complete', Rowv=show_tree, Colv=show_tree, color='Blues:100', border='black', filename=out, ...)
+    # Incidence matrix
+    x = t(sapply(genes, function(gi) all_genes %in% gi) * colors[all_genes])
+    rownames(x) = terms
+    colnames(x) = all_genes
+    if(nrow(x) <= 1 | ncol(x) <= 1){return(NULL)}
+    
+    # Heatmap [terms x genes]
+    if(ncol == 'auto' & nrow == 'auto'){
+        ri = nrow(x)/max(nrow(x), ncol(x))
+	ci = ncol(x)/max(nrow(x), ncol(x))
+	nrow = max(2.5*ri, 1.25)
+	ncol = max(2.5*ci, 1.25)
+	print(c(nrow, ncol))
+    }
+    
+    # Auto condense labels
+    if(auto_condense %in% c('rows', 'both')){
+        ysec = FALSE
+	if(nrow(x) >= max_terms/2){ystag = TRUE}
+    }
+    if(auto_condense %in% c('cols', 'both')){
+        xsec = FALSE
+	if(ncol(x) >= max_genes/2){xstag = TRUE}
+    }
+        
+    p1 = ggheatmap(x, pal='Blues', font_size=font_size, Rowv='hclust', Colv='hclust', xstag=xstag, ystag=ystag, xsec=xsec, ysec=ysec, ...)
+    
+    # P-value barplot
+    x = data.frame(Term=factor(terms, levels=levels(p1$data$row)), P.value=pvals)
+    p2 = ggplot(x, aes(x=Term, y=P.value)) +
+         geom_bar(stat='identity', width=.6, fill='#6BAED6') +
+	 coord_flip() + xlab('') + ylab('-log10(P-value)') + theme_cowplot(font_size=font_size) +
+         theme(axis.line.y=element_blank(), axis.ticks.y=element_blank(), axis.text.y=element_blank(), panel.grid.major.x=element_line(colour='#000000', size=.25, linetype='dotted')) +
+	 scale_y_continuous(position='top', breaks=function(a) seq(floor(min(a)), floor(max(a))), labels=function(a) floor(a))
+    
+    # Merge plots
+    p3 = get_legend(p1)
+    p1 = p1 + theme(legend.position='none')
+    p = plot_grid(plot_grid(p1, p2, nrow=1, rel_widths=c(.925, .075), align='h'), p3, nrow=1, rel_widths=c(.95, .05))
+
+    if(!is.null(out)){
+        save_plot(p, file=out, nrow=nrow, ncol=ncol)
+    }
+    p
+}
+
+
+gsea_heatmaps = function(gsea, markers=NULL, colors=NULL, prefix, ...){
+    outdir = dirname(prefix)
+    if(!dir.exists(outdir)){dir.create(outdir, recursive=TRUE)}
+    for(name in names(gsea)){
+        out = gsub('\\/\\.', '/', paste(prefix, name, 'gsea.png', sep='.'))
+	print(paste('Writing', name, 'heatmap to', out))
+        gsea_heatmap(gsea=gsea[[name]], markers=markers, colors=colors, out=out, ...)
+    }
+}
+
+
+
+
+
+score_signatures = function(seur, signatures, group_by=NULL, cells.use=NULL){
+    
+    # Fix input arguments
+    data = seur@data
+    if(is.null(cells.use)){cells.use = colnames(data)}
+    if(!is.null(group_by)){
+        group_by = as.factor(group_by[cells.use])
+	totals = table(group_by)
+    }
+    
+    # Calculate signature scores
+    sapply(signatures, function(genes.use){
+        genes.use = intersect(genes.use, rownames(data))
+	x = as.matrix(t(data[genes.use, cells.use]))
+	if(!is.null(group_by)){
+	    x = rowsum(x, group_by)
+	    if(any(rownames(x) != names(totals))){stop()}
+	    x = x/as.vector(totals)
+	}
+	x = x[,apply(x, 2, sd) != 0]
+	rowMeans(x)
+   })						
+}
+
+diff_signatures = function(seur, cells.1, cells.2, signatures, group_by=NULL){
+
+    # Fix input arguments
+    data = seur@data
+    if(is.null(group_by)){group_by = seur@ident}
+    if(is.null(names(group_by))){stop()}
+    groups.1 = as.factor(group_by[as.character(cells.1)])
+    groups.2 = as.factor(group_by[as.character(cells.2)])
+    totals.1 = table(groups.1)
+    totals.2 = table(groups.2)
+
+    sapply(signatures, function(genes.use){
+        genes.use = intersect(genes.use, rownames(data))
+	x1 = rowsum(as.matrix(t(data[genes.use, cells.1])), groups.1)
+	x2 = rowsum(as.matrix(t(data[genes.use, cells.2])), groups.2)
+	if(any(rownames(x1) != names(totals.1)) | any(rownames(x2) != names(totals.2))){stop()}
+	x1 = x1/as.vector(totals.1)
+	x2 = x2/as.vector(totals.2)
+	diff = x1 - x2
+	rowMeans(diff)
+    })
 }
 
 

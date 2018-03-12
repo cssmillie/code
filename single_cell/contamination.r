@@ -1,4 +1,4 @@
-plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NULL, fit.cutoff=2, out=NULL){
+plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NULL, fit.cutoff=2, lab.name='Group', out=NULL){
     
     require(ggplot2)
     require(ggrepel)
@@ -12,31 +12,37 @@ plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NU
     lab.con = names(which(residuals < fit.cutoff))
     
     # scatterplot data
-    d = data.frame(x=l2, y=l1, lab=ifelse(names(l1) %in% i, names(l1), ''), Type=rep('Other', length(l1)), stringsAsFactors=F)
+    d = data.frame(x=l2, y=l1, lab=ifelse(names(l1) %in% lab.fit, names(l1), ''), Type=rep('Other', length(l1)), stringsAsFactors=F)
     d[lab.con, 'Type'] = 'Contamination'
     d[lab.fit, 'Type'] = 'Fit'
     lab.use = intersect(rownames(d), lab.use)
     d[lab.use, 'Type'] = 'Label'
     d[lab.use, 'lab'] = lab.use
     
-    # rug and line data
+    # rug plot data
     d.rug = data.frame(x=l2[u1 == 0], y=l2[u1 == 0])
-    x0 = (min(l1, na.rm=T) - coefs[[1]] - fit.cutoff)/coefs[[2]]
-    x1 = max(l2, na.rm=T)
-    d.line = data.frame(x=c(x0, x1))
-    d.line$y = coefs[[2]]*d.line$x + coefs[[1]] + fit.cutoff
     
-    # plot data
+    # make plot
     if(!is.null(out)){alpha=.25} else {alpha=1}
     p = ggplot(d, aes(x=x, y=y)) +
         geom_point(aes(colour=Type)) +
    	geom_text_repel(aes(label=lab), size=2, segment.color='grey') +
 	geom_rug(data=d.rug, aes(x=x), sides='t', col='black', alpha=alpha) +
-	geom_line(data=d.line, aes(x=x, y=y), lty=2) +
-	xlab(paste0('Mean TPM (Non-group)')) +
-    	ylab(paste0('Mean TPM (Group)')) +
+	xlab(paste0('log2(<TPM>) (Non-', lab.name, ')')) +
+    	ylab(paste0('log2(<TPM>) (', lab.name, ')')) +
     	scale_colour_manual(values=c('lightcoral', 'black', 'steelblue3', 'lightgray')) +	
     	theme_cowplot()
+
+    # add regression lines
+    coefs = as.matrix(coefs)
+    for(j in 1:ncol(coefs)){
+        x0 = (min(l1, na.rm=T) - coefs[1,j] - fit.cutoff)/coefs[2,j]
+	x1 = max(l2, na.rm=T)
+	d.line = data.frame(x=c(x0, x1))
+        d.line$y = coefs[2,j]*d.line$x + coefs[1,j] + fit.cutoff
+	if(j == 1){lty = 'longdash'} else {lty = 'dotted'}
+	p = p + geom_line(data=d.line, aes(x=x, y=y), lty=lty)
+    }
     
     # save or display plot
     if(!is.null(out)){
@@ -47,34 +53,37 @@ plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NU
 }
 
 
-detect_contamination = function(tpm, groups, samples, global_coefs=NULL, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test'){
+detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NULL, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test', n.cores=1){
     
     require(MASS)
+    source('~/code/single_cell/parallel.r')
     source('~/code/single_cell/regression.r')
-    
-    # summarize
-    cat('\n\nDetecting ambient contamination\n\n')
-    print(table(groups))
-    print(table(samples))
-    if(!is.null(global_coefs)){coefs = global_coefs}
-    
+        
     # initialize variables
-    res = list()
+    if(is.null(anno)){anno = structure(unique(as.character(idents)), names=unique(as.character(idents)))}
+    if(any(! idents %in% anno)){stop('! idents %in% anno')}
+    groups = names(anno)
+    
+    # summarize data
+    cat('\n\nDetecting ambient contamination\n\n')
+    print(table(idents))
+    print(table(samples))
+    print(groups)
     
     # iterate over groups
-    for(group in unique(groups)){cat(paste0('\n\nGroup = ', group))
+    res = run_parallel(foreach(group=groups) %dopar% {print(group)
         
         # output file
         out = paste(prefix, group, 'fit.png', sep='.')
     	
         # subset data
-	i = groups == group
-	j = groups != group
-
+	i = idents %in% anno[[group]]
+	j = idents %in% setdiff(idents, i)
+		
 	# sample frequencies
 	f = table(as.factor(samples)[i])
 	f = as.matrix(f/sum(f))
-
+	
 	# group mean
 	u1 = rowMeans(tpm[,i])
 	
@@ -91,62 +100,81 @@ detect_contamination = function(tpm, groups, samples, global_coefs=NULL, fit.n=5
 	l1 = nice_log2(u1)
 	l2 = nice_log2(u2)
 	
-	if(is.null(global_coefs)){
+        # fit boundaries
+        lo = quantile(l2[u1 == 0], .99, na.rm=T)
+        hi = sort(l2, decreasing=T)[100]
+        cat(paste0('\n\tLo Cutoff = ', lo, '\n\tHi Cutoff = ', hi))
+        exclude = list(c(-Inf, lo), c(hi, Inf))
+	
+	# select points for regression
+	lab.fit = names(select_points(l2, l1, n=fit.n, dir='down', nbins=10, loess=T, exclude=exclude))
+	cat(paste0('\n\tGenes for regression: ', paste(lab.fit, collapse=', ')))
 	    
-	    # fit boundaries
-	    lo = quantile(l2[u1 == 0], .99, na.rm=T)
-	    hi = sort(l2, decreasing=T)[100]
-	    cat(paste0('\n\tLo Cutoff = ', lo, '\n\tHi Cutoff = ', hi))
-	    exclude = list(c(-Inf, lo), c(hi, Inf))
-	    
-	    # select points for regression
-	    lab.fit = names(select_points(l2, l1, n=fit.n, dir='down', nbins=10, loess=T, exclude=exclude))
-	    cat(paste0('\n\tGenes for regression: ', paste(lab.fit, collapse=', ')))
-	    
-	    # robust linear model
-	    cat('\n\tFitting rlm')
-	    fit = rlm(l1[lab.fit] ~ l2[lab.fit])
-	    coefs = coef(fit)
-	    print(coefs)
-
-	} else {fit = lab.fit = NULL}
+	# robust linear model
+	cat('\n\tFitting rlm')
+	fit = rlm(l1[lab.fit] ~ l2[lab.fit])	
+	coefs = as.matrix(coef(fit))
+	print(coefs)
+	
+	if(!is.null(global_coefs)){coefs = cbind(global_coefs, coefs)}
 	
 	# calculate residuals
-	residuals = l1 - (coefs[[2]]*l2 + coefs[[1]])
+	residuals = l1 - (coefs[2,1]*l2 + coefs[1,1])
 	lab.con = names(which(residuals < fit.cutoff))
 	cat(paste0('\n\tLikely contaminants: ', paste(lab.con, collapse=', ')))
-	
-	# plot data
-	if(do.plot == TRUE){
-	    plot_contamination(u1, u2, coefs, residuals, lab.use=lab.use, lab.fit=lab.fit, fit.cutoff=fit.cutoff, out=out)
-	}
+	if(do.plot == TRUE){plot_contamination(u1, u2, coefs, residuals, lab.use=lab.use, lab.fit=lab.fit, fit.cutoff=fit.cutoff, out=out)}
 	
 	# update results
-	res[[group]] = list(u1=u1, u2=u2, fit=fit, coefs=coefs, residuals=residuals, lab.use=lab.use, lab.fit=lab.fit, lab.con=lab.con)
-    }
-    res
+	list(u1=u1, u2=u2, fit=fit, coefs=coefs, residuals=residuals, lab.use=lab.use, lab.fit=lab.fit, lab.con=lab.con)
+    }, n.cores = n.cores)
+    
+    names(res) = groups
+    cat(paste('\ndetect_contamination: finished\n', names(res), '\n'))
+    return(res)
 }
 
 
-full_detect_contamination = function(tpm, idents, groups, samples, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test'){
+full_detect_contamination = function(tpm, groups, idents, samples, anno=NULL, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test', n.cores=1){
+
+    # Find potential contamination in single cell data
+    # fit model to "groups" vector
+    # run model on "idents" (with optional annotation map)
     
-    # fit models to cell groups
+    # Fit models to cell groups
     cat('\n\nDetect contamination\n\n')
     cat('\nFitting group models\n')
-    res.groups = detect_contamination(tpm, groups, samples, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix)
+    res.groups = detect_contamination(tpm, groups, samples, anno=NULL, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix, n.cores=n.cores)
     
-    # calculate average model
-    cat('\nModel coefficients\n')
+    # Average model across groups
     coefs = sapply(res.groups, function(a) a$coefs)
     print(coefs)
-    cat('\nMedian coefficients\n')
     global_coefs = apply(coefs, 1, median)
+    cat('\nModel coefficients\n')
     print(coefs)
+    cat('\nCombining coefficients\n')
+    print(global_coefs)
     
-    # run average model on cell idents
+    # Run average model on groups
+    cat('\nFitting group models\n')
+    res.groups = detect_contamination(tpm, groups, samples, anno=NULL, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix, global_coefs=global_coefs, n.cores=n.cores)
+    
+    # Run average model on idents (with optional annotation map)
     cat('\nFitting ident models\n')
-    res.idents = detect_contamination(tpm, idents, samples, global_coefs=global_coefs, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix)
+    res.idents = detect_contamination(tpm, idents, samples, anno=anno, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix, global_coefs=global_coefs, n.cores=n.cores)
     
-    # return all data
+    # Return data
     return(list(res.groups=res.groups, res.idents=res.idents))
 }
+
+
+add_contamination = function(markers, res){
+    
+    # convert residuals to long format
+    ires = sapply(res$res.idents, function(a) a$residuals)
+    ires = as.data.table(as.data.frame(ires) %>% rownames_to_column('gene') %>% gather('ident', 'contam.res', -gene))
+    
+    # merge with marker list
+    merge(markers, ires, by=c('ident', 'gene'))
+}
+
+
