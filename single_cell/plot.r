@@ -51,7 +51,7 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
     if(!is.null(scores)){scores = as.data.frame(scores, row.names=colnames(seur@data))}
     if(!is.null(group_by)){names(group_by) = colnames(seur@data)}
     name_map = structure(make.names(colnames(scores)), names=colnames(scores))
-
+    
     # Subset cells
     if(!is.null(cells.use)){
         data = data[,cells.use]
@@ -116,7 +116,7 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
 	# Score cells
 	si = sapply(genes, function(a){
             i = intersect(rownames(data), a)
-            colMeans(as.matrix(data[i,,drop=F]), na.rm=T)
+            colSums(as.matrix(data[i,,drop=F]), na.rm=T)
         })
 	
 	# Convert to alpha, mu, or mean
@@ -153,7 +153,7 @@ get_scores = function(seur=NULL, data=NULL, meta=NULL, scores=NULL, names=NULL, 
     # Calculate log2 after mean
     if((do.log == TRUE & log_type == 'post') & length(genes) > 0){
         gene_names = make.names(names(genes))
-	scores[,gene_names] = log2(scores[,gene_names] + zero)
+	scores[,gene_names] = log2(scores[,gene_names] + log_zero)
     }
     
     # Reverse map
@@ -366,7 +366,8 @@ heatmap2 = function(x, col='nmf', lmat=NULL, lwid=NULL, lhei=NULL, margins=c(5,5
 
 
 ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=FALSE, ysec=FALSE, xstag=FALSE, ystag=FALSE, title='', legend.title='', pal='nmf', do.legend=TRUE, font_size=14,
-                     out=NULL, nrow=1.25, ncol=1.25, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, symm=FALSE, xstrip=NULL, ystrip=NULL, hclust_met='average'){
+                     out=NULL, nrow=1.25, ncol=1.25, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, symm=FALSE, xstrip=NULL, ystrip=NULL, hclust_met='average', outline='#cccccc', replace_na=NA,
+		     labRow=TRUE, labCol=TRUE){
     require(ggplot2)
     require(tidyr)
     require(cowplot)
@@ -374,9 +375,12 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     
     # Scale values
     data = qtrim(data, qmin=qmin, qmax=qmax, vmin=vmin, vmax=vmax)
+    data[is.na(data)] = replace_na
+    if(!is.logical(labRow)){rownames(data) = labRow}
+    if(!is.logical(labCol)){colnames(data) = labCol}
     
     # Convert to long format
-    data = as.data.frame(data)    
+    data = as.data.frame(data)
     x = data %>% rownames_to_column('row') %>% gather(col, value, -row)
     x$value = as.numeric(x$value)
 
@@ -397,10 +401,17 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     if(Colv == 'none'){
         colv = colnames(data)
     }
+    if(Rowv == 'min'){
+        rowv = rev(rownames(data)[order(apply(data, 1, which.min))])
+    }
     if(Rowv == 'max'){
         rowv = rev(rownames(data)[order(apply(data, 1, which.max))])
     }
-    if(Colv == 'max'){
+    if(Colv == 'min'){
+        i = match(rownames(data)[apply(data, 2, which.min)], rowv)
+	colv = rev(colnames(data)[order(i)])        
+    }
+    if(Colv == 'max'){        
         i = match(rownames(data)[apply(data, 2, which.max)], rowv)
 	colv = rev(colnames(data)[order(i)])
     }
@@ -430,7 +441,7 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     
     # Plot with geom_tile
     p = ggplot(x) +
-        geom_tile(aes(x=as.numeric(col), y=as.numeric(row), fill=value), colour='#cccccc') +
+        geom_tile(aes(x=as.numeric(col), y=as.numeric(row), fill=value), colour=outline) +
 	labs(x=xlab, y=ylab, title=title, fill=legend.title) +
 	theme_cowplot(font_size=font_size) +
 	theme(axis.text.x=element_text(angle=90, hjust=1, vjust=.5), axis.line=element_blank())
@@ -458,6 +469,8 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
 	p = p + scale_y_continuous(breaks=r1, labels=Rowv[r1], sec.axis=dup_axis(breaks=r2, labels=Rowv[r2]), expand=c(0,0))
     }
     
+    if(labRow[[1]] == FALSE){p = p + theme(axis.text.y = element_blank(), axis.ticks.y = element_blank())}
+    if(labCol[[1]] == FALSE){p = p + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())}
     if(do.legend == FALSE){p = p + theme(legend.position='none')}
 
     # Save plot
@@ -719,7 +732,7 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
 }
 
 
-plot_volcano = function(fcs, pvals, labels=NULL, color_by=NULL, facet_by=NULL, lab.x=c(-1, 1), max_pval=.05, lab.n=0, lab.p=0, lab.size=5, do.repel=TRUE,
+plot_volcano = function(fcs, pvals, labels=NULL, color_by=NULL, facet_by=NULL, lab.x=c(-1, 1), max_pval=.05, lab.n=0, lab.p=0, lab.size=5, do.repel=TRUE, pval_floor=-Inf,
                         font.size=11, legend.title='Groups', out=NULL, nrow=1.5, ncol=1.5, xlab='Fold change', ylab='-log10(pval)', palette='RdBu', ret.labs=FALSE){
     
     # Volcano plot with automatic labeling:
@@ -729,6 +742,7 @@ plot_volcano = function(fcs, pvals, labels=NULL, color_by=NULL, facet_by=NULL, l
     # Make plot data
     if(is.null(color_by)){color_by = rep('Group', length(fcs))}
     if(is.null(facet_by)){facet_by = rep('Group', length(fcs))}
+    pvals[pvals < pval_floor] = pval_floor
     data = data.frame(x=fcs, y=-log10(pvals), Color=color_by, Facet=facet_by, stringsAsFactors=F)
     data$Facet = as.factor(data$Facet)
     
@@ -741,12 +755,12 @@ plot_volcano = function(fcs, pvals, labels=NULL, color_by=NULL, facet_by=NULL, l
 	    
 	    # Label points < lab.x
 	    breaks = seq(from=min(di$x, na.rm=T), to=lab.x[[1]], length.out=10)
-	    groups = cut(di$x, breaks=breaks)
+	    groups = cut(di$x, breaks=breaks, include.lowest=TRUE)
 	    j1 = as.numeric(simple_downsample(cells=1:nrow(di), groups=groups, ngene=di$y, total_cells=as.integer(lab.n/2)))
-
+	    
 	    # Label points > lab.x
 	    breaks = seq(from=lab.x[[2]], to=max(di$x, na.rm=T), length.out=10)
-	    groups = cut(di$x, breaks=breaks)
+	    groups = cut(di$x, breaks=breaks, include.lowest=TRUE)
 	    j2 = as.numeric(simple_downsample(cells=1:nrow(di), groups=groups, ngene=di$y, total_cells=as.integer(lab.n/2)))
 	    
 	    # Label best global p-values
@@ -781,9 +795,10 @@ plot_volcano = function(fcs, pvals, labels=NULL, color_by=NULL, facet_by=NULL, l
     if(is.numeric(data$Color)){
         p = p + scale_colour_distiller(palette=palette, trans='reverse')
     } else {
-        p = p + scale_colour_manual(values=tsne.colors)
+        p = p + scale_colour_manual(values=desat(set.colors, .5))
     }
-    
+    if(all(color_by == 'Group')){p = p + theme(legend.position='none')}
+        
     # Facet wrap
     if(nlevels(data$Facet) > 1){
         print('Faceting')

@@ -16,7 +16,7 @@ tsne.colors = c(brewer.pal(7, 'Set2'), brewer.pal(9, 'Set1'), brewer.pal(12, 'Se
 tsne.colors[13] = 'khaki2'
 tsne.colors[15] = 'lightskyblue2'
 tsne.colors = rep(tsne.colors, 10)
-tsne.colors = desat(tsne.colors, sat=.5)
+tsne.colors = desat(tsne.colors, sat=.75)
 
 material.heat <- function(n)
 {
@@ -53,3 +53,4 @@ tol9qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC7
 tol10qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#882255", "#AA4499")
 tol11qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#882255", "#AA4499")
 tol12qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#AA4466", "#882255", "#AA4499")
+

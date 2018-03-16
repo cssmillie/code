@@ -143,15 +143,7 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
     
     # Fix names
     if(fix_names == TRUE){
-        terms = gsub('GO[^\\)]*;', '', terms)
-	terms = gsub('positive', 'pos', terms)
-	terms = gsub('negative', 'neg', terms)
-	terms = gsub('regulation', 'reg', terms)
-	terms = gsub('response', 'resp', terms)
-	terms = gsub('signaling', 'sig', terms)
-	terms = gsub('interaction', 'ix', terms)
-	terms = gsub('DOWN', 'down', gsub('UP', 'up', terms))
-	terms = make.unique(substr(terms, 1, 45))
+        terms = fix_gsea_names(terms)
     }
     
     # Get colors
@@ -216,7 +208,56 @@ gsea_heatmaps = function(gsea, markers=NULL, colors=NULL, prefix, ...){
 }
 
 
+fix_gsea_names = function(terms, nlen=45){
+    terms = gsub('GO[^\\)]*;', '', terms)
+    terms = gsub('positive', 'pos', terms)
+    terms = gsub('negative', 'neg', terms)
+    terms = gsub('regulation', 'reg', terms)
+    terms = gsub('response', 'resp', terms)
+    terms = gsub('signaling', 'sig', terms)
+    terms = gsub('interaction', 'ix', terms)
+    terms = gsub('DOWN', 'down', gsub('UP', 'up', terms))
+    terms = make.unique(substr(terms, 1, nlen))
+    terms
+}
 
+
+gsealist_heatmap = function(glist, regex='', name='BP', n=3, max_pval=1, max_padj=1, plot.n=Inf, plot.max_pval=1, plot.max_padj=1, fix_names=TRUE, nlen=50, replace_na=0, rcut=1){
+    
+    # Filter by p-value and sort by NES
+    glist = glist[grep(regex, names(glist))]
+    glist = lapply(glist, function(a) a[[name]][order(-1*NES)])
+    glist = glist[lapply(glist, nrow) > 0]
+    
+    # Select [n.terms] terms from each GSEA
+    terms = sort(unique(unlist(as.vector(sapply(glist, function(gsea) gsea[pval <= max_pval & padj <= max_padj][NES > 0][1:min(n, nrow(gsea))]$pathway)))))
+    
+    # Select [show.n] enrichment scores from each GSEA
+    data = sapply(glist, function(gsea){
+        gsea = gsea[pval <= plot.max_pval & padj <= plot.max_padj][1:min(plot.n, nrow(gsea))]
+	setkey(gsea, pathway)
+	gsea[terms, NES]
+    })
+    
+    # Fix names and replace NAs
+    rownames(data) = terms
+    if(fix_names == TRUE){rownames(data) = fix_gsea_names(rownames(data), nlen=nlen)}
+    data[is.na(data)] = replace_na
+    
+    # Optionally remove terms with correlation > rcut
+    keep = rep(TRUE, nrow(data))
+    dist = cor(t(data))
+    for(i in 1:nrow(data)){
+        if(keep[[i]] == FALSE){next}
+        j = which(dist[i,] > rcut)
+        if(length(j) <= 1){next}
+        k = apply(data[j,], 1, quantile, .8)
+        j = j[k != max(k)]
+        keep[j] = FALSE
+    }
+    data = data[keep,]
+    data
+}
 
 
 score_signatures = function(seur, signatures, group_by=NULL, cells.use=NULL){
@@ -459,4 +500,3 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
     names(go_terms) = clusters
     return(go_terms)
 }
-

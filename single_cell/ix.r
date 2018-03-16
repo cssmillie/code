@@ -1,26 +1,28 @@
 
 
-smart_shuffle = function(data, max_iter=1000){
+smart_shuffle = function(data, max_tries=10, max_iter=100){
 
     # shuffle genes while avoiding duplicate ident/gene pairs
     # data = matrix(1=ident, 2=gene, 3=health, 4=de)
     # returns data with shuffled 'ident' column
     
-    data$ident = sample(data$ident)
-    for(i in 1:max_iter){        
-        ident = data$ident
-	i = duplicated(data[,.(gene, ident)])
-	if(sum(i) == 0){break}
-	j = sample(which(!i), sum(i))
-	ident[i] = data$ident[j]
-	ident[j] = data$ident[i]
-	data$ident = ident
+    for(try_count in 1:max_tries){
+        data$ident = sample(data$ident)
+        for(iter_count in 1:max_iter){
+            ident = data$ident
+	    i = duplicated(data[,.(gene, ident)])
+	    if(sum(i) == 0){return(data)}
+	    j = sample(which(!i), sum(i))
+	    ident[i] = data$ident[j]
+	    ident[j] = data$ident[i]
+	    data$ident = ident
+        }
     }
     return(data)
 }
 
 
-build_ix_network = function(data, ix=NULL, max_n=Inf, max_ix=Inf, permute=FALSE, unique=TRUE, symm=TRUE){
+build_ix_network = function(data, ix=NULL, max_n=Inf, max_ix=Inf, permute=FALSE, unique=TRUE, symm=TRUE, method='psum'){
     require(data.table)
     
     # build cell-cell interaction network from markers and gene pairs
@@ -38,7 +40,7 @@ build_ix_network = function(data, ix=NULL, max_n=Inf, max_ix=Inf, permute=FALSE,
     data = as.data.table(sapply(data, as.character))
     if(any(colnames(data) != c('gene', 'ident', 'health', 'de'))){Rstop('data: check colnames')}
     data$health = as.logical(data$health)
-    data$ix = as.logical(data$ix)
+    data$de = as.logical(data$de)
 
     # interaction list
     if(is.null(ix)){
@@ -122,18 +124,22 @@ build_ix_network = function(data, ix=NULL, max_n=Inf, max_ix=Inf, permute=FALSE,
 	    }
 	}
     }
-    h$edges = as.data.table(h$edges)
-    d$edges = as.data.table(d$edges)
-
+    
     # build graph
-    h$graph = edgelist2graph(nodes=nodes, edges=h$edges, unique=unique, symm=symm)
-    d$graph = edgelist2graph(nodes=nodes, edges=d$edges, unique=unique, symm=symm)
+    if(!is.null(h$edges)){
+        h$edges = as.data.table(h$edges)
+	h$graph = edgelist2graph(nodes=nodes, edges=h$edges, unique=unique, symm=symm, method=method)
+    }
+    if(!is.null(d$edges)){
+        d$edges = as.data.table(d$edges)
+        d$graph = edgelist2graph(nodes=nodes, edges=d$edges, unique=unique, symm=symm, method=method)
+    }
     
     return(list(h=h,d=d))
 }
 
 
-edgelist2graph = function(nodes, edges, unique=TRUE, symm=TRUE){
+edgelist2graph = function(nodes, edges, unique=TRUE, symm=TRUE, method='psum'){
     require(data.table)
     
     # converts an edgelist to an adjacency matrix
@@ -152,9 +158,11 @@ edgelist2graph = function(nodes, edges, unique=TRUE, symm=TRUE){
     } else {
         u = table(unique(edges[,.(lcell, rcell, lig)])[,.(lcell, rcell)])
        	v = table(unique(edges[,.(lcell, rcell, rec)])[,.(lcell, rcell)])
-        g = as.matrix(pmin(u,v))
+	if(method == 'pmin'){g = as.matrix(pmin(u,v))}
+	if(method == 'pmax'){g = as.matrix(pmax(u,v))}
+	if(method == 'psum'){g = as.matrix(u + v)}
     }
-
+    
     # make symmetric
     graph[rownames(g), colnames(g)] = g
     if(symm == TRUE){

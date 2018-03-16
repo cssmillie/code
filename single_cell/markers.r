@@ -24,6 +24,12 @@ unorder_factors = function(x){
     x
 }
 
+relevel_factors = function(x){
+    j = sapply(x, is.factor)
+    x[,j] = lapply(x[,j,drop=F], function(a) droplevels(a))
+    x
+}
+
 
 get_data = function(seur, data.use='tpm', tpm=NULL, cells.use=NULL){
     
@@ -147,7 +153,10 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
         tpm = tpm[,cells.use]
 	covariates = covariates[cells.use,,drop=F]
     }
-    
+
+    # Drop levels
+    covariates = relevel_factors(covariates)
+
     # Select genes
     if(!is.null(genes.use)){tpm = tpm[genes.use,,drop=F]}
     total = rowSums(tpm)
@@ -311,12 +320,6 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.
         
     } else {stats = NULL; genes.use = rownames(data)}
     
-    # Add highly expressed genes
-    if(length(setdiff(rownames(tpm), genes.use)) > 10){
-        genes.add = names(sort(rowSums(tpm[na.omit(setdiff(rownames(tpm), genes.use)[1:1000]), na.omit(colnames(tpm)[1:100])]), decreasing=T)[1:10])
-        genes.use = unique(c(genes.add, genes.use))
-    }
-    
     # FDR stats
     if(do.stats == TRUE){
         fdr = fdr_stats(data, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
@@ -328,7 +331,9 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.
     # Subset data
     print(paste('Testing', length(genes.use), 'genes in', length(cells.use), 'cells'))
     data = data[genes.use, cells.use, drop=F]
+    data = rbind(data, rnorm(ncol(data)))
     covariates = unorder_factors(covariates[cells.use, , drop=F])
+    covariates = relevel_factors(covariates)
     
     # Run marker tests
     labels = covariates[,1]
