@@ -6,6 +6,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('-i', help='run directory')
 parser.add_argument('-s', help='SampleSheet.csv')
 parser.add_argument('-m', help='memory', type=int, default=150)
+parser.add_argument('-u', help='usernames', default='')
 args = parser.parse_args()
 
 # strip trailing /
@@ -19,5 +20,6 @@ Submitter = ssub.Submitter()
 Submitter.H = 'use .bcl2fastq2-2.17.1.14'
 Submitter.m = args.m
 Submitter.o = 'demult'
-Submitter.t = [3600*12, 3600*24]
+Submitter.t = '24:00:00'
+Submitter.users = args.u.split(',')
 Submitter.submit([cmd])

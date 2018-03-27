@@ -26,6 +26,7 @@ def parse_args():
     parser.add_argument('-W', default=float('inf'), type=float, help='max inactivity (sec)')
     parser.add_argument('-g', default=False, action='store_true', help='group tasks')
     parser.add_argument('-v', default=True, action='store_false', help='no verbose')
+    parser.add_argument('-x', default=False, action='store_true', help='write and exit')
     parser.add_argument('commands', nargs='?', default='')
     
     if __name__ == '__main__':
@@ -164,6 +165,7 @@ class Submitter():
         self.W = args.W # max inactivity
         self.g = args.g # group tasks
         self.v = args.v # verbose
+        self.x = args.x # write and exit
         self.inactivity = time.time()
         
         # fix arguments
@@ -224,6 +226,9 @@ class Submitter():
         # submit job
         cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, task_ids, self.P, array)
         print(cmd)
+        # hackish
+        if self.x:
+            quit()
         out = self.system(cmd, user=u)
         print(out)
         

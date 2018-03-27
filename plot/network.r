@@ -111,16 +111,24 @@ make_edges = function(data, pairs, subset=NULL, binary=FALSE, symmetric=TRUE, ma
 }
 
 
-rescale_vector = function(x, target=c(0, 1), f=identity){
+rescale_vector = function(x, target=c(0, 1), f=identity, abs=TRUE){
     # map vector onto target interval, then apply f
     a = target[[1]]
     b = target[[2]]
-    x = (x - min(x))/(max(x) - min(x))*(b - a) + a
-    f(x)
+    if(min(x) == max(x)){
+        rep(max(target), length(x))
+    } else {
+        if(abs == TRUE){
+            x = (x - min(abs(x)))/(max(abs(x)) - min(abs(x)))*(b - a) + a
+	} else {
+            x = (x - min(x))/(max(x) - min(x))*(b - a) + a
+	}
+        f(x)
+    }
 }
 
 
-plot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, rescale_weights=c(0,1), f_coords=identity, rescale_coords=c(0,1), alpha=.5, color_edges=FALSE){
+plot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, rescale_weights=c(0,1), f_coords=identity, rescale_coords=c(0,1), alpha=1, color_edges=FALSE){
     
     # plots a network diagram from edges
     # data = (nodes x nodes) weights matrix or (node, node, weight) list
@@ -134,7 +142,8 @@ plot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, resc
         edges = gather(as.data.frame(edges) %>% rownames_to_column('source'), target, weight, -source)
     }
     
-    # de-duplicate
+    # remove zeros and de-duplicate
+    edges = edges[edges$weight != 0,]
     i = apply(edges, 1, function(a) paste(sort(c(a[[1]], a[[2]])), collapse=' '))
     edges = edges[!duplicated(i),]
     
@@ -153,12 +162,14 @@ plot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, resc
     l = layout_with_fr(g, weight=edges$weight)
     
     # rescale coordinates
-    l = apply(l, 2, function(a) rescale_vector(a, target=rescale_coords, f=f_coords))
+    l = apply(l, 2, function(a) rescale_vector(a, target=rescale_coords, f=f_coords, abs=TRUE))
     
     # rescale edge widths
     w = edges$weight
-    w = rescale_vector(w, target=rescale_weights, f=f_weights)
-
+    w = rescale_vector(w, target=rescale_weights, f=f_weights, abs=TRUE)
+    edges$color = ifelse(edges$weight > 0, set.colors[[1]], set.colors[[2]])
+    print(edges)
+    
     # add labels
     if(!is.null(labels)){
         edges$label = apply(edges, 1, function(a) sample(labels[[a[[1]]]][[a[[2]]]], 1))
@@ -174,60 +185,89 @@ plot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, resc
 }
 
 
-ggplot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, rescale_weights=NULL, f_coords=identity, rescale_coords=NULL, alpha=.5, color_edges=FALSE, symmetric=FALSE){
-
+ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=NULL, scale_nodes=c(0,10), scale_edges=c(0,1), alpha=1, symm=TRUE, do.legend=TRUE, legend_title=NULL, out=NULL, nrow=1, ncol=1){
+    
     library(ggplot2)
     library(tidyverse)
     library(cowplot)
+    library(ggnetwork)
+    source('~/code/single_cell/colors.r')
 
-    # get edgelist
-    if(ncol(edges) != 3){
-        edges = gather(as.data.frame(edges) %>% rownames_to_column('source'), target, weight, -source)
-    }
+    # plot network from graph or edgelist
+    # -----------------------------------
+
+    # graph = [m x n] adjacency graph
+    # edges = data.frame(1=source, 2=target, 3=weight)
+    # node_sizes = unnamed list (size1, size2, ...) or named list, list(node1=size1, node2=size2, ...)
+    # node_colors = unnamed list (color1, color2, ...) or named list, list(node1=color1, node2=color2, ...)
     
-    # de-duplicate
-    if(symmetric == TRUE){
-        i = apply(edges, 1, function(a) paste(sort(c(a[[1]], a[[2]])), collapse=' '))
+    # convert data to long format
+    if(!is.null(graph)){edges = gather(as.data.frame(graph) %>% rownames_to_column('source'), target, weight, -source)}
+    if(!is.null(node_sizes) & is.null(names(node_sizes))){names(node_sizes) = rownames(graph)}
+    if(!is.null(node_colors) & is.null(names(node_colors))){names(node_colors) = rownames(graph)}
+    nodes = sort(unique(c(rownames(graph), colnames(graph))))
+    if(is.null(node_sizes)){node_sizes = structure(rep(1, length(nodes)), names=nodes)}
+    if(is.null(node_colors)){node_colors = structure(rep(1, length(nodes)), names=nodes)}
+        
+    # remove duplicate edges
+    if(symm == TRUE){
+        i = apply(edges[,1:2], 1, function(a) paste(sort(a), collapse=' '))
 	edges = edges[!duplicated(i),]
     }
     
-    # modify edges
-    edges$weight = f_weights(edges$weight)
-    
-    # delete zero and self edges
+    # adjust edge weights
     edges = edges[edges$weight > 0,]
     edges = edges[edges$source != edges$target,]
-    
-    # rescale edge widths
-    if(!is.null(rescale_weights)){
-        edges$weight = rescale_vector(edges$weight, target=rescale_weights, f=f_weights)
+    if(!is.null(scale_edges)){
+        edges$weight = rescale_vector(edges$weight, target=scale_edges, abs=TRUE)
     }
     
-    # add labels
-    if(!is.null(labels)){
-    	edges$label = apply(edges, 1, function(a) sample(labels[[a[[1]]]][[a[[2]]]], 1))
-	edges$label[edges$weight < sort(edges$weight, decreasing=T)[label_n]] = ''
-    }
-    print(edges)
-    # make network
+    # convert edges to igraph object
     g = graph.data.frame(edges)
     
-    # make ggnetwork
-    n = ggnetwork(g, weights='weight')
-    print(head(n))
+    # vertex attributes / igraph craziness
+    nodes = V(g)$name
     
-    # ggplot
-    p = ggplot(n, aes(x = x, y = y, xend = xend, yend = yend)) +
-    geom_edges(color='grey50', size=na.omit(n$weight), alpha=.5) +
-    geom_nodes(size=10, color='lightskyblue2') + 
-    geom_nodelabel_repel(aes(label=vertex.names), size=3, fill='white', label.r=unit(.05, 'lines'), box.padding=unit(.15, 'lines'), label.padding=unit(.15, 'lines')) +
-    theme_blank()
+    # node sizes
+    if(length(node_sizes) > 1){
+        node_sizes = node_sizes[nodes]
+        if(!is.null(scale_nodes)){
+            node_sizes = rescale_vector(node_sizes, target=scale_nodes)
+        }
+    }
+    V(g)$node_size = node_sizes
+    
+    # node colors
+    if(length(node_colors) > 1){
+        node_colors = node_colors[nodes]
+    }
+    V(g)$node_color = as.character(node_colors)
+    
+    # edge colors
+    if(TRUE){
+        E(g)$edge_color = '#cccccc'
+    } else {
+        E(g)$edge_color = '#cccccc'
+    }
+
+    # igraph -> data.frame for ggplot2
+    n = ggnetwork(g, weights='weight')
+    n$node_color = as.character(n$node_color)
+    
+    # plot with ggnetwork
+    if(is.null(out)){alpha = 1}
+    p = ggplot(n, aes(x=x, y=y, xend=xend, yend=yend)) +
+	geom_edges(color='#cccccc', size=na.omit(n$weight), alpha=alpha) +
+        geom_nodes(aes(color=node_color), size=6) + 
+	geom_nodetext_repel(aes(label=vertex.names)) +
+	scale_color_manual(legend_title, values=tsne.colors) +
+	theme_blank()
+    
+    if(do.legend == FALSE){p = p + theme(legend.position='none')}
+
+    if(!is.null(out)){save_plot(p, file=out, nrow=nrow, ncol=ncol)}
+    
     p
-    #geom_nodetext_repel(aes(label=vertex.names), size=3, fill='gold', box.padding=unit(.15, 'lines'), label.padding=unit(.15,'lines'), label.r=unit(0,'lines'))
-    #geom_edgetext_repel(aes(label=label), fill=NA, size=2.5, label.r=unit(0, 'lines'))
-    #p$data$xmid = (p$data$x + p$data$xend)/2
-    #p$data$ymid = (p$data$y + p$data$yend)/2
-    #p + geom_label(aes(x=xmid, y=ymid, label=label))
 }
 
 

@@ -2,7 +2,9 @@ source('~/code/single_cell/map_gene.r')
 
 
 psi_log = function(x, base=2, zero=NULL){
-    if(is.null(zero)){zero = .5*min(x[x > 0])}
+    if(is.null(zero)){
+        if(any(x == 0)){zero = .5*min(x[x > 0])} else {zero = 0}
+    }
     log(x + zero, base=base)
 }
 
@@ -11,17 +13,22 @@ geom_mean = function(x, base=2, zero=NULL){
 }
 
 colGmeans = function(x, base=2){
-    zero = .5*min(x[x > 0])
-    apply(x, 2, geom_mean, base=base, zero=zero)
+    # Calculate geometric mean of gene expression for each cell
+    # x = [genes x cells] matrix
+    
+    # Estimate separate zero for each gene
+    zeros = apply(x, 1, function(a) if(all(a > 0)){0} else {.5*min(a[a > 0])})
+    x = x + zeros
+    apply(x, 2, geom_mean, base=base, zero=0)
 }
 
 predict_dge_type = function(x, bases.use=c(2, exp(1), 10), tol=1e-4){
     # Returns counts, tpm, or log base
-
+    
     # Select data
     u = as.numeric(x[,1])
     v = as.numeric(x[,2])
-
+    
     # Check for integers
     if(abs(sum(u - round(u))) <= tol & abs(sum(v - round(v))) <= tol){
         return('counts')
@@ -34,7 +41,7 @@ predict_dge_type = function(x, bases.use=c(2, exp(1), 10), tol=1e-4){
     
     # Check for big numbers
     if(max(u) > 32 | max(v) > 32){
-        print('predict_log_base: guessing data type = imputed TPM')
+        print('predict_log_base: found big numbers, so guessing data type = imputed TPM')
         return('tpm')
     }
 
@@ -48,7 +55,7 @@ predict_dge_type = function(x, bases.use=c(2, exp(1), 10), tol=1e-4){
     if(u[[i]] <= tol){
         return(bases.use[[i]])
     } else {
-        stop('predict_log_base: unknown data type')
+        print('predict_log_base: confused, so guessing data type = TPM???')
     }
 }
 
@@ -57,16 +64,19 @@ calc_tpm = function(seur=NULL, data=NULL, genes.use=NULL, cells.use=NULL, total=
     # Calculate TPM from @raw.data or data argument
     
     # Select counts data
-    if(is.null(data)){data = seur@raw.data}
+    if(is.null(data)){
+        print('Guessing data type = counts')
+        data = seur@raw.data
+	type = 'counts'
+    } else {
+        type = predict_dge_type(data[, sample(1:ncol(data), 2)])
+    }
     if(is.null(genes.use)){genes.use = rownames(data)}
     if(is.null(cells.use)){cells.use = colnames(data)}
     
     # Get genes and cells
     genes.use = intersect(genes.use, rownames(data))
     cells.use = intersect(cells.use, colnames(data))
-    
-    # Predict DGE type
-    type = predict_dge_type(data[, sample(1:ncol(data), 2)])
     
     if(type == 'counts'){
         require(wordspace)    
@@ -93,30 +103,28 @@ get_data = function(seur, data.use='tpm', tpm=NULL, genes.use=NULL, cells.use=NU
 
     if(!is.character(data.use)){
         data = data.use
-    }
-    if(data.use == 'counts'){
+    } else if(data.use == 'counts'){
         data = seur@raw.data
-    }
-    if(data.use == 'tpm'){
+    } else if(data.use == 'tpm'){
         if(is.null(tpm)){
 	    data = calc_tpm(seur, genes.use=genes.use, cells.use=cells.use)
 	} else {
             data = tpm
         }
-    }
-    if(data.use == 'log2'){
+    } else if(data.use == 'log2'){
         if(predict_dge_type(seur@data, bases.use=c(2)) != 2){
-	    stop('Error: seur@data log base != 2')
+	    print('Warning: seur@data is not log base 2')
 	}
 	data = seur@data
-    }
-    if(data.use == 'scale'){
+    } else if(data.use == 'scale'){
         if(!is.null(genes.use)){
 	    genes.use = intersect(genes.use, rownames(seur@data))
 	} else {
 	    genes.use = rownames(seur@data)
 	}
 	data = t(scale(t(seur@data[genes.use,])))
+    } else {
+        stop('Error: get_data invalid argument')
     }
     
     # Subset genes and cells
@@ -143,10 +151,10 @@ map_names = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, fi
     # Map names
     if(!is.null(names)){
         if(target == 'auto'){target = predict_organism(rownames(data)[1:100])}
-	genes = sapply(names, function(a){
+	genes = sapply(names, function(a){a = as.character(a)
 	    i = a %in% rownames(data)
 	    u = a[i]
-	    if(sum(!i) > 0){u = c(u, intersect(map_gene(a[!i], target=target), rownames(data)))}
+	    if(sum(!i) > 0){u = c(u, intersect(map_gene(a[!i], source=source, target=target), rownames(data)))}
 	    unique(u)
 	}, simplify=F)
 	feats = sapply(names, function(a) a[a %in% colnames(meta)])
@@ -161,9 +169,10 @@ map_names = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, fi
     # Map files
     if(!is.null(files)){
         sig = do.call(c, lapply(files, function(file) load_signature(file, file.regex=file.regex, file.cols=file.cols)))
+	sig = sapply(sig, function(a) intersect(map_gene(a, source=source, target=target), rownames(data)), simplify=F)
 	genes = c(genes, sig)
     }
-
+    
     # Filter genes and feats
     genes = genes[sapply(genes, length) > 0]
     feats = feats[sapply(feats, length) > 0]
@@ -190,36 +199,42 @@ map_names = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, fi
 }
 
 
-score_cells = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, files=NULL, file.cols=NULL, file.regex=NULL, top=NULL, source='auto', target='auto', scores=NULL,
-                       data.use='tpm', combine_genes='mean', groups=NULL, group_stat='mean', do.log=FALSE, log_zero='auto', genes_first=TRUE, cells.use=NULL, make.names=TRUE){
+score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, files=NULL, file.cols=NULL, file.regex=NULL, top=NULL, source='auto', target='auto', scores=NULL,
+                       data.use='log2', combine_genes='mean', groups=NULL, group_stat='mean', genes_first=TRUE, cells.use=NULL, make.names=TRUE, do.log=FALSE){
+
     require(Matrix)
     require(Matrix.utils)
     
     # Score gene expression across cells and optionally aggregate
     # The default steps are:
-    # 1) Select data (data.use = 'tpm', 'log2', or 'scaled')
+    # 1) Select data (data.use = 'tpm', 'log2', or 'scale')
     # 2) Calculate mean expression across genes (combine_genes = 'sum', 'mean', or 'gmean')
     # 3) Calculate mean expression within each cell type (group_by, group_stat = 'mean', 'alpha', 'mu')
     # 4) Log transform results (do.log)
     # If genes_first == FALSE, then calculate the group means *before* combining across genes
     
-    # Fix input arguments
-    if(is.null(data)){data = get_data(seur, data.use=data.use, cells.use=cells.use)}
+    # Fix input arguments and get data for name mapping
+    if(is.null(data)){map_data = seur@data} else {map_data = data}
     if(is.null(meta)){meta = seur@data.info}
-    if(!is.null(scores)){old_scores = as.data.frame(scores)} else {old_scores=c()}
     if(!is.null(groups)){names(groups) = colnames(seur@data)}
-       
-    # Get genes and feats
-    res = map_names(seur=seur, data=data, meta=meta, names=names, regex=regex, files=files, file.cols=file.cols, file.regex=file.regex, top=top, source=source, target=target)
+    if(!is.null(scores)){scores = data.frame(scores, row.names=colnames(seur@data))}
+                    
+    # Map genes and feats
+    res = map_names(seur=seur, data=map_data, meta=meta, names=names, regex=regex, files=files, file.cols=file.cols, file.regex=file.regex, top=top, source=source, target=target)
     genes = res$genes
     feats = res$feats
+    genes.use = unique(do.call(c, genes))
+    if(length(genes) == 0 & length(feats) == 0){return(scores)}
         
+    # Select data with genes.use    
+    if(is.null(data)){data = get_data(seur, data.use=data.use, cells.use=cells.use)}
+    
     # Subset cells
     if(!is.null(cells.use)){
-        data = data[,cells.use]
-        meta = meta[cells.use,]
+        data = data[,cells.use,drop=F]
+        meta = meta[cells.use,,drop=F]
         if(!is.null(groups)){groups = groups[cells.use]}
-        if(!is.null(scores)){scores = scores[cells.use,,drop=F]}
+	if(!is.null(scores)){scores = scores[cells.use,,drop=F]}
     }
     
     group_genes = function(x, method){
@@ -227,17 +242,28 @@ score_cells = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, 
         # combine expression data across genes within a signature
 	# x = [genes x cells] matrix
 	# method = 'sum', 'mean', or 'gmean'
-	# returns [cells]-vector
+	# returns [genes x cells] or [1 x cells] matrix
 	
-	if(nrow(x) == 1){return(x[1,])}
+	if(nrow(x) == 1){return(x[1,,drop=F])}
 	
 	if(method == 'sum'){
-	    colSums(x)
+	    t(colSums(x))
 	} else if(method == 'mean'){
-	    colMeans(x)
-	} else if(method == 'gmean'){
-	    colGmeans(x)
-	} else {
+	    t(colMeans(x))
+	} else if(method == 'geom'){
+	    t(colGmeans(x))
+	} else if(method == 'max'){
+	    x = x/apply(x, 1, max)
+	    t(colMeans(x))
+	} else if(method == 'norm'){
+	    x = x/apply(x, 1, sum)
+	    t(colMeans(x))
+	} else if(method == 'scale'){
+	    x = t(scale(t(x)))
+	    t(colMeans(x))
+	} else if(method == 'none'){
+	    x
+	}else {
 	    stop('Error: invalid combine_genes method')
 	}
     }
@@ -259,7 +285,21 @@ score_cells = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, 
     
     # Calculate scores
     names.use = unique(c(names(genes), names(feats)))
-    scores = sapply(names.use, function(name){
+    
+    # Fast indexing for flat structures
+    name_map = sapply(names.use, function(a) c(genes[[a]], feats[[a]]), simplify=F)
+    do.flat = all(sapply(name_map, length) == 1)
+    if(do.flat == TRUE){
+        genes[['flat']] = do.call(c, genes)
+	feats[['flat']] = do.call(c, feats)
+	names.iter = 'flat'
+	combine_genes = 'none'
+    } else {
+        names.iter = names.use
+    }
+        
+    backup = scores
+    scores = lapply(names.iter, function(name){
         
         # Combine data and metadata
 	if(name %in% names(genes)){si = data[genes[[name]],,drop=F]} else {si = c()}
@@ -268,20 +308,40 @@ score_cells = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, 
 	
 	if(genes_first == TRUE){
 	    si = group_genes(si, method=combine_genes)
-	    si = group_cells(t(si), groups=groups, method=group_stat)[1,]
+	    si = group_cells(si, groups=groups, method=group_stat)
 	} else {
 	    si = group_cells(si, groups=groups, method=group_stat)
 	    si = group_genes(si, method=combine_genes)
 	}
-	si
+
+	if(do.log == TRUE){
+	    si = psi_log(si, base=2)
+	}
+	as.data.frame(t(si))
     })
-
-    # Fix names
-    colnames(scores) = names.use
-    if(make.names == TRUE){colnames(scores) = make.names(colnames(scores))}
     
-    # Log transform
-    if(do.log == TRUE){scores = psi_log(scores, zero=.5*min(data@x))}
-    return(as.data.frame(cbind(scores, old_scores)))
-}
+    # Collapse scores
+    if(do.flat == TRUE){
+	scores = scores[[1]][,make.names(name_map[names.use]),drop=F]
+    } else {
+        do.collapse = all(lapply(scores, ncol) == 1)
+	if(do.collapse == TRUE){
+	    scores = as.data.frame(do.call(cbind, scores))
+	}
+    }
+    
+    # Fix names
+    if(make.names == TRUE){names.use = make.names(names.use)}
+    names(scores) = names.use
 
+    # Combine data
+    if(!is.null(backup)){
+        if(is.data.frame(scores)){
+            scores = cbind.data.frame(scores, backup)
+        } else {
+            scores = c(scores, backup)
+        }
+    }
+    
+    return(scores)
+}

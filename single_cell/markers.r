@@ -164,14 +164,13 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
     # Model matrix
     print('Model matrix')
     mm = as.matrix(model.matrix(as.formula(formula), data=unorder_factors(covariates)))
-    
+        
     # Invert matrix
     print('Invert matrix')
     u = mm_logical_not(mm, formula, covariates, method=invert_method, invert=invert_logic)
-    
     MM = u$x
     refs = structure(u$names, names=colnames(MM))
-    
+        
     # For every column that matches lrt_regex
     print('Expression stats')
     stats = lapply(grep(lrt_regex, colnames(mm), value=T), function(a){print(a)
@@ -180,7 +179,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
 	i = as.logical(mm[,a])
 	j = as.logical(MM[,a])
 	ref = refs[[a]]
-	
+		
 	# number of expressing cells
 	n1 = rowSums(tpm[,i,drop=F] > 0)
 	n2 = rowSums(tpm[,j,drop=F] > 0)
@@ -299,10 +298,10 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.
     # Check covariates
     q = sapply(covariates, typeof)
     if('character' %in% q){print(q); stop('error: invalid covariates type')}
-    
+        
     # Select cells
     cells.use = select_cells(seur, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
-    
+        
     # TPM for log fold changes [genes x cells]
     tpm = get_data(seur, data.use=tpm.use, tpm=tpm, cells.use=cells.use)
     
@@ -313,13 +312,13 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.
         
         # Expression stats
         stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
-	
-        # Select genes
+
+	# Select genes
         genes.use = select_genes(seur, stats, data.use=data, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
         if(length(genes.use) == 0){return(c())}
         
     } else {stats = NULL; genes.use = rownames(data)}
-    
+        
     # FDR stats
     if(do.stats == TRUE){
         fdr = fdr_stats(data, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)

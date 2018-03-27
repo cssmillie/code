@@ -222,41 +222,55 @@ fix_gsea_names = function(terms, nlen=45){
 }
 
 
-gsealist_heatmap = function(glist, regex='', name='BP', n=3, max_pval=1, max_padj=1, plot.n=Inf, plot.max_pval=1, plot.max_padj=1, fix_names=TRUE, nlen=50, replace_na=0, rcut=1){
+gsealist_heatmap = function(glist, regex='', name='BP', n=3, n.plot=Inf, max_pval=1, max_padj=1, plot.max_pval=1, plot.max_padj=1, fix_names=TRUE, nlen=50, replace_na=0,
+                            rcut=NULL, ret.data=F, ...){
     
     # Filter by p-value and sort by NES
     glist = glist[grep(regex, names(glist))]
     glist = lapply(glist, function(a) a[[name]][order(-1*NES)])
     glist = glist[lapply(glist, nrow) > 0]
-    
-    # Select [n.terms] terms from each GSEA
+        
+    # Select [n] terms from each gsea
     terms = sort(unique(unlist(as.vector(sapply(glist, function(gsea) gsea[pval <= max_pval & padj <= max_padj][NES > 0][1:min(n, nrow(gsea))]$pathway)))))
-    
-    # Select [show.n] enrichment scores from each GSEA
+        
+    # Get [terms x NES] matrix
     data = sapply(glist, function(gsea){
-        gsea = gsea[pval <= plot.max_pval & padj <= plot.max_padj][1:min(plot.n, nrow(gsea))]
+        gsea = gsea[pval <= plot.max_pval & padj <= plot.max_padj][1:min(n.plot, nrow(gsea))]
 	setkey(gsea, pathway)
 	gsea[terms, NES]
     })
     
-    # Fix names and replace NAs
-    rownames(data) = terms
-    if(fix_names == TRUE){rownames(data) = fix_gsea_names(rownames(data), nlen=nlen)}
+    # Get [terms x padj] matrix
+    pvals = sapply(glist, function(gsea){
+        gsea = gsea[pval <= plot.max_pval & padj <= plot.max_padj][1:min(n.plot, nrow(gsea))]
+	setkey(gsea, pathway)
+	gsea[terms, pval]
+    })
+        
+    # Fix rownames and NAs
+    if(fix_names == TRUE){terms = fix_gsea_names(terms, nlen=nlen)}
+    rownames(data) = rownames(pvals) = terms
     data[is.na(data)] = replace_na
+    pvals[is.na(pvals)] = 1
     
-    # Optionally remove terms with correlation > rcut
-    keep = rep(TRUE, nrow(data))
-    dist = cor(t(data))
-    for(i in 1:nrow(data)){
-        if(keep[[i]] == FALSE){next}
-        j = which(dist[i,] > rcut)
-        if(length(j) <= 1){next}
-        k = apply(data[j,], 1, quantile, .8)
-        j = j[k != max(k)]
-        keep[j] = FALSE
+    # Remove redundant terms with rcut
+    if(!is.null(rcut)){
+        keep = rep(TRUE, nrow(data))
+    	dist = cor(t(data))
+    	for(i in 1:nrow(data)){
+            if(keep[[i]] == FALSE){next}
+            j = which(dist[i,] > rcut)
+            if(length(j) <= 1){next}
+            k = apply(data[j,], 1, quantile, .8)
+            j = j[k != max(k)]
+            keep[j] = FALSE
+    	}
+    	data = data[keep,]
     }
-    data = data[keep,]
-    data
+    
+    if(ret.data == TRUE){list(data=data, pvals=pvals)} else {
+        ggheatmap(data, pvals=pvals, max_pval=.05, ...)
+    }
 }
 
 

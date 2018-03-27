@@ -27,7 +27,7 @@ msg = function(name, text, verbose){
 }
 
 
-make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, ming=500, maxg=1e6, genes.use=NULL, cells.use=NULL, ident_fxn=NULL, verbose=FALSE, x11=FALSE){
+make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, ming=500, maxg=1e6, genes.use=NULL, cells.use=NULL, ident_fxn=NULL, verbose=FALSE, x11=FALSE, qnorm=F){
     
     # Load packages
     require(data.table)
@@ -106,8 +106,15 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
     seur = new('seurat', raw.data=counts)
     seur = Setup(seur, project=name, min.cells=0, min.genes=0, total.expr=1e4, names.delim='\\.', names.field=1, do.center=F, do.scale=F, do.logNormalize=F)
     
-    # Convert data to log2(TPM)
-    seur@data = as(log2(1e4*scale(seur@raw.data, center=F, scale=colSums(seur@raw.data)) + 1), 'sparseMatrix')
+    # Normalize data (default = TPM)
+    if(qnorm == FALSE){
+        seur@data = as(log2(1e4*scale(seur@raw.data, center=F, scale=colSums(seur@raw.data)) + 1), 'sparseMatrix')
+    } else {
+        library(preprocessCore)
+	seur@data = as(log2(normalize.quantiles.robust(as.matrix(seur@raw.data)) + 1), 'sparseMatrix')
+	rownames(seur@data) = rownames(seur@raw.data)
+	colnames(seur@data) = colnames(seur@raw.data)
+    }
     
     # Get cell identities
     if(!is.null(ident_fxn)){
@@ -127,7 +134,7 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
 
 
 run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=1e6, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
-             min_cv2=.25, var_genes=NULL,
+             min_cv2=.25, var_genes=NULL, qnorm=F,
 	     num_genes=1500, do.batch='none', batch.use=NULL, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, dist.use='cosine', do.largevis=FALSE, largevis.k=50,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
 
@@ -136,7 +143,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     
     # Make Seurat object
     if(is.null(seur)){
-        seur = make_seurat(name=name, dge=dge, regex=regex, regexv=regexv, minc=minc, maxc=maxc, ming=ming, maxg=maxg, genes.use=genes.use, cells.use=cells.use, ident_fxn=ident_fxn, verbose=verbose)
+        seur = make_seurat(name=name, dge=dge, regex=regex, regexv=regexv, minc=minc, maxc=maxc, ming=ming, maxg=maxg, genes.use=genes.use, cells.use=cells.use, ident_fxn=ident_fxn, verbose=verbose, qnorm=qnorm)
     }
     if(ncol(seur@data) <= stop_cells){return(seur)}
     
@@ -312,15 +319,22 @@ make_mini = function(seur, num_genes=100, num_cells=100, ident.k=NULL){
 }
 
 
-map_ident = function(seur, old_ident){    
+map_ident = function(seur, old_ident){
     old_ident = as.data.frame(old_ident)
     new_ident = data.frame(ident=rep(NA, ncol(seur@data)), row.names=colnames(seur@data))
     i = intersect(rownames(old_ident), rownames(new_ident))
-    new_ident[i,1] = old_ident[i,1]
+    new_ident[i,1] = as.character(old_ident[i,1])
     new_ident = structure(as.factor(new_ident[,1]), names=rownames(new_ident))
     return(new_ident)
 }
 
+fast_ident = function(seur, ident_map){
+    ident_map = data.frame(stack(ident_map), row.names=1)
+    ident_map[,1] = make.unique(as.character(ident_map[,1]))
+    ident = seur@ident
+    levels(ident) = ident_map[as.character(levels(ident)),1]
+    return(ident)
+}
 
 update_signatures = function(seur){
     
