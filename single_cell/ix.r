@@ -31,7 +31,7 @@ smart_shuffle = function(data, cols.shuf, cols.test=NULL, max_tries=10, max_iter
     as.data.table(data)
 }
 
-make_ix_network = function(data, diff=NULL, ix=NULL, weights=NULL, permute=FALSE, perm.col='gene', symm=TRUE, method='sum', do.intersect=FALSE){
+make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, permute=FALSE, perm.col='gene', do.intersect=FALSE){
     require(data.table)
     
     # Build cell-cell interaction network from markers and gene pairs
@@ -39,19 +39,17 @@ make_ix_network = function(data, diff=NULL, ix=NULL, weights=NULL, permute=FALSE
     # Input arguments:
     # - data = matrix(1=ident, 2=gene) = cell type markers
     # - diff = matrix(1=ident, 2=gene) = DE genes (optional)
+    # - weights = matrix(1=ident, 2=gene, 3=weight)
     # - ix = matrix(1=gene, 2=gene) = interaction matrix
-    # - weights = matrix(1=ident, 2=gene, 3=weight)    
     # - permute = permute gene list?
-    # - method sum = add total unique edge weights
-    # - symm = make graph symmetric by: x = x + t(x)
     # - do.intersect = intersect diff with data, i.e.
     #   require DE genes to also be cell type markers
-    # - returns list(graph, edges) for data or diff
+    # - returns edgelist for data or diff
     
     # Fix inputs
     data = as.data.table(data[,c('ident', 'gene')])
     data[, ct := 1]
-    
+        
     # Merge markers with DE genes
     if(!is.null(diff)){
         diff = as.data.table(diff[,c('ident', 'gene')])
@@ -64,15 +62,6 @@ make_ix_network = function(data, diff=NULL, ix=NULL, weights=NULL, permute=FALSE
     
     # Remove DE genes that are not cell type markers
     if(do.intersect == TRUE){data = data[ct == 1]}
-    
-    # Add weights to data
-    if(!is.null(weights)){
-        weights = as.data.table(weights[,c('ident', 'gene', 'w')])
-	data = merge(data, weights, by=c('ident', 'gene'), all.x=TRUE)
-    } else {
-        data[, w := 1]
-    }
-    print(head(data))
     
     # Read interactions
     if(is.null(ix)){
@@ -95,10 +84,14 @@ make_ix_network = function(data, diff=NULL, ix=NULL, weights=NULL, permute=FALSE
     
     # Permute ligands and receptors
     if(permute == TRUE){
+        shuf_index = data[,.(ident=ident, old=gene)]
         i = data$gene %in% ix$lig
 	data[i] = smart_shuffle(data[i], perm.col, c('ident', 'gene'))
 	i = data$gene %in% ix$rec
 	data[i] = smart_shuffle(data[i], perm.col, c('ident', 'gene'))
+	shuf_index[,new := data[,gene]]
+    } else {
+        shuf_index = NULL
     }
     
     # Initialize network
@@ -152,63 +145,104 @@ make_ix_network = function(data, diff=NULL, ix=NULL, weights=NULL, permute=FALSE
 	}}
     }
     
-    # Get weights from data
-    weights = data[,.(ident, gene, w)]
-    
     # Build graph from edgelist
     if(is.null(diff)){
         edges = as.data.table(n$edges)
     } else {
         edges = as.data.table(d$edges)
     }
-    graph = edgelist2graph(nodes=nodes, edges=edges, weights=weights, symm=symm, method=method)
     
-    # Remove edges from permuted data
-    if(permute == TRUE){edges = NULL}
-    return(list(edges=edges, graph=graph))
+    return(list(edges=edges, shuf_index=shuf_index))
 }
 
-edgelist2graph = function(nodes, edges, weights=NULL, symm=TRUE, method='sum'){
+edges2graph = function(edges, weights=NULL, symm=TRUE, unique=TRUE, shuf_index=NULL, node_order=NULL){
     require(data.table)
     
-    # Converts an edgelist to an adjacency matrix
-    # edgelist = list(1=lcell, 2=rcell, 3=lig, 4=rec)
-    # weights = matrix(1=ident, 2=gene, 3=weight)
+    # Convert edgelist to adjacency matrix
+    # edges = list(1=lcell, 2=rcell, 3=lig, 4=rec, 5=weight)
+    # weights = list(1=ident, 2=gene, 3=weight)
     # symm = make graph symmetric by: x = x + t(x)
-    # method sum = add total unique edge weights
+    
+    # Check input arguments
+    if(! all(c('lcell', 'rcell', 'lig', 'rec') %in% colnames(edges))){
+        stop('colnames(edges) != lcell, rcell, lig, rec')
+    }
+    
+    # Fix input data and add weights
+    edges = as.data.table(edges)
+    if(is.null(node_order)){
+        nodes = sort(unique(c(edges$lcell, edges$rcell)))
+    } else {
+        nodes = node_order
+    }
+    genes = sort(unique(c(edges$lig, edges$rec)))
     
     # Initialize adjacency matrix
-    edges = as.data.table(edges)
     graph = as.data.frame(matrix(0, nrow=length(nodes), ncol=length(nodes)))
     rownames(graph) = colnames(graph) = nodes
     
-    # Get unique ligands and receptors
-    lig = unique(edges[,.(lcell, rcell, lig)])
-    rec = unique(edges[,.(lcell, rcell, rec)])
-    
-    # Add edge weights
-    if(!is.null(weights)){
-        setkeyv(weights, c('ident', 'gene'))
-	lig[, w := weights[.(lcell, lig)]$w]
-	rec[, w := weights[.(rcell, rec)]$w]
+    if(unique == TRUE){
+
+        if(is.null(weights)){
+	    print('using default weights = 1')
+	    ident = c(edges$lcell, edges$rcell)
+	    genes = c(edges$lig, edges$rec)
+	    weights = unique(data.frame(ident=ident, gene=genes))
+	    weights$weight = 1
+	} else if(!is.null(shuf_index)){
+	    print('aligning with shuf_index')
+	    weights = as.data.table(unique(weights))
+	    weights = setkeyv(weights, c('ident', 'gene'))
+	    new = shuf_index[,.(ident, new)]
+	    old = shuf_index[,.(ident, old)]
+	    weights[new]$weight = weights[old]$weight
+	}
+	weights = as.data.table(unique(weights))
+	weights = setkeyv(weights, c('ident', 'gene'))
+	
+        # Get unique ligands and receptors
+        lig = unique(edges[,.(lcell, rcell, lig)])
+        rec = unique(edges[,.(lcell, rcell, rec)])
+        
+        # Add edge weights
+        lig[, weight := weights[.(lcell, lig)]$weight]
+	rec[, weight := weights[.(rcell, rec)]$weight]
+	if(any(is.na(lig$weight)) | any(is.na(rec$weight))){stop('Error: NA weights (give pre-shuffle weights with shuf_index)')}
+	
+        # Aggregate edge weights
+        lig = lig[, .(weight=sum(weight)), .(lcell, rcell)]
+        rec = rec[, .(weight=sum(weight)), .(lcell, rcell)]
+        
+        # Convert to matrix
+        lig = data.frame(spread(lig, rcell, weight), row.names=1)
+        rec = data.frame(spread(rec, rcell, weight), row.names=1)
+        lig[is.na(lig)] = 0
+        rec[is.na(rec)] = 0
+        
+        # Align data and combine
+        x = y = graph
+        x[rownames(lig), colnames(lig)] = lig
+        y[rownames(rec), colnames(rec)] = rec   
+        graph = as.matrix(x + y)
+	
+    } else {
+        
+	if(! 'weight' %in% colnames(edges)){
+	    cat('\nUsing default weight=1\n')
+	    edges[,weight := 1]
+	}
+	
+        # Aggregate edge weights
+	edges = edges[, .(weight=sum(weight)), .(lcell, rcell)]
+	
+	# Convert to matrix
+	edges = data.frame(spread(edges, rcell, weight), row.names=1)
+	edges[is.na(edges)] = 0
+	
+	# Align data and combine
+	graph[rownames(edges), colnames(edges)] = edges
     }
     
-    # Aggregate edge weights
-    lig = lig[, .(w=sum(w)), .(lcell, rcell)]
-    rec = rec[, .(w=sum(w)), .(lcell, rcell)]
-        
-    # Convert to matrix
-    lig = data.frame(spread(lig, rcell, w), row.names=1)
-    rec = data.frame(spread(rec, rcell, w), row.names=1)
-    lig[is.na(lig)] = 0
-    rec[is.na(rec)] = 0
-    
-    # Align data and combine
-    x = y = graph
-    x[rownames(lig), colnames(lig)] = lig
-    y[rownames(rec), colnames(rec)] = rec   
-    if(method == 'sum'){graph = as.matrix(x + y)}
-
     # Make symmetric
     if(symm == TRUE){
         graph = graph + t(graph)

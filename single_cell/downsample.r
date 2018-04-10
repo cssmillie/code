@@ -28,6 +28,7 @@ num_cells_per_group = function(groups, total_cells=NULL, cells_per_group=NULL){
     num_cells
 }
 
+resample = function(x,...){if(length(x)==1) x else sample(x,...)} 
 
 simple_downsample = function(cells, groups, ngene=NULL, total_cells=NULL, cells_per_group=NULL){
 
@@ -43,16 +44,15 @@ simple_downsample = function(cells, groups, ngene=NULL, total_cells=NULL, cells_
     # Calculate group sizes
     groups = as.factor(groups)
     num_cells_per_group = num_cells_per_group(groups=groups, total_cells=total_cells, cells_per_group=cells_per_group)
-    
+        
     # Downsample cells within each group
     ds.cells = sapply(levels(groups), function(a){
 
         # Shuffle cells within group
-        cells = sample(cells[groups == a])
-
+        cells = resample(cells[groups == a])
+	
 	# Select by highest ngene
 	cells[order(ngene[cells], decreasing=T)[1:num_cells_per_group[[a]]]]
-	
     })
     ds.cells = as.character(na.omit(unname(unlist(ds.cells))))
     return(ds.cells)

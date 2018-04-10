@@ -10,7 +10,7 @@ source('~/code/single_cell/map_gene.r')
 source('~/code/single_cell/scores.r')
 
 
-qtrim = function(x, qmin=0, qmax=1, vmin=-Inf, vmax=Inf){
+qtrim = function(x, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, rescale=NULL){
     
     # Trim by value
     x[x < vmin] = vmin
@@ -21,9 +21,26 @@ qtrim = function(x, qmin=0, qmax=1, vmin=-Inf, vmax=Inf){
     v = quantile(x, qmax, na.rm=T)
     x[x < u] = u
     x[x > v] = v
-    
+
     return(x)
 }
+
+
+rescale_vector = function(x, target=c(0,1), f=identity, abs=FALSE){
+    # Rescale vector onto target interval
+    a = target[[1]]
+    b = target[[2]]
+    if(min(x) == max(x)){
+        rep(min(target), length(x))
+    } else {
+        if(abs == TRUE){
+            x = (x - min(abs(x)))/(max(abs(x)) - min(abs(x)))*(b - a) + a
+        } else {
+            x = (x - min(x))/(max(x) - min(x))*(b - a) + a
+        }
+        f(x)
+    }
+}										
 
 
 load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL){
@@ -166,7 +183,7 @@ make_compact = function(plotlist, num_col, labels=TRUE, ticks=TRUE){
 }
 
 
-share_legend = function(plotlist, num_col, width=0.05){
+share_legend = function(plotlist, num_col, rel_widths=NULL, width=.1){
     
     # Get first legend in plotlist
     i = min(which(sapply(plotlist, function(p) 'guide-box' %in% ggplotGrob(p)$layout$name)))
@@ -177,7 +194,8 @@ share_legend = function(plotlist, num_col, width=0.05){
     plotlist = lapply(plotlist, function(p) p + theme(legend.position='none'))
     
     # Make combined plot
-    p = plot_grid(plotlist=plotlist, ncol=num_col, align='h')
+    if(is.null(rel_widths)){rel_widths = rep(1, length(plotlist))}
+    p = plot_grid(plotlist=plotlist, ncol=num_col, align='h', rel_widths=rel_widths)
     p = plot_grid(p, legend, ncol=2, rel_widths=c(1-width, width))
     
     return(p)
@@ -269,7 +287,7 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     
     # Merge data and p-values
     if(is.null(pvals)){
-        x$pval = Inf
+        x$pval = border
     } else {
         if(ncol(pvals) == 3){
 	    colnames(pvals) = c('row', 'col', 'pval')
@@ -525,9 +543,10 @@ plot_dots = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, r
     p = ggplot(d, aes(x=Group, y=Feature, size=Size, fill=Color)) +
         geom_point(color='black', pch=21, stroke=.25) +
 	scale_size_area(dot_size, max_size=max_size) +
-	scale_fill_gradientn(dot_color, colours=brewer.pal(9,'Blues')) +
+	#scale_fill_gradientn(dot_color, colours=brewer.pal(9,'Blues')) +
+	scale_fill_gradientn(dot_color, colours=material.heat(8)) +
 	theme_cowplot(font_size=font_size) +
-	theme(axis.title=element_blank(), panel.grid.major=element_line(colour='black'), axis.text.x=element_text(angle=90, hjust=1, vjust=.5)) +
+	theme(axis.title=element_blank(), panel.grid.major=element_line(colour='black'), axis.text.x=element_text(angle=90, hjust=1, vjust=.5)) + panel_border() +
 	background_grid(major='xy')
     
     if(coord_flip == TRUE){p = p + coord_flip()}
@@ -541,7 +560,7 @@ plot_dots = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, r
 plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, regex=NULL, files=NULL, file.regex=NULL, file.cols=NULL, top=NULL, type='mean', group_by=NULL, color_by=NULL, pt.size=.25,
 	               do.facet=FALSE, facet_by=NULL, facet_formula=NULL, facet_scales='free_y', ymin=0, ymax=1, do.scale=FALSE, num_col='auto',
                        ident=TRUE, cells.use=NULL, do.title=TRUE, do.legend=FALSE, xlab='Cell Type', ylab='log2(TPM)', out=NULL, nrow=1.5, ncol=1.5, legend.title='Group',
-		       coord_flip=FALSE, alpha=.5, order=NULL){
+		       coord_flip=FALSE, alpha=.5, order=NULL, font_size=10){
     
     # Initialize plots
     ps = list()
@@ -570,7 +589,6 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
     
     # Cell scores
     scores = score_cells(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, files=files, top=top, file.regex=file.regex, file.cols=file.cols, cells.use=cells.use)
-    #scores = get_scores(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, file=file, top=top, file.regex=file.regex, file.cols=file.cols, type=type, cells.use=cells.use)
     scores = scores[cells.use,,drop=F]
     d = cbind.data.frame(d, scores)
     
@@ -603,11 +621,11 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	p = p +
 	    geom_point(position=position_jitterdodge(dodge.width=0.6, jitter.width=2.5), size=pt.size, show.legend=F) +
 	    geom_violin(scale='width', alpha=alpha) +
-	    scale_fill_manual(values=set.colors) + theme_cowplot() +
+	    scale_fill_manual(values=set.colors) + theme_cowplot(font_size=font_size) +
 	    xlab(xlab) + ylab(ylab) + labs(fill=legend.title) +
 	    stat_summary(fun.y=mean, fun.ymin=mean, fun.ymax=mean, geom='crossbar', width=.5, show.legend=F) +
 	    theme(axis.text.x = element_text(angle = 45, hjust = 1))
-	
+
 	if(do.title == TRUE){
 	    p = p + ggtitle(col)
 	}
@@ -853,7 +871,8 @@ plot_volcanos = function(markers, color_by=NULL, outdir='volcano'){
 }
 
 
-simple_scatter = function(x, y, lab=NULL, col=NULL, lab.use=NULL, lab.near=0,  lab.n=0, lab.g=0, groups=NULL, lab.size=4, lab.type='up', palette='RdBu', xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1){
+simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, size.title='', lab.use=NULL, lab.near=0,  lab.n=0, lab.g=0, groups=NULL, lab.size=4, lab.type='up', palette=NULL,
+                          xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1, min_size=1, max_size=3){
 
     require(ggplot2)
     require(ggrepel)
@@ -861,54 +880,90 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, lab.use=NULL, lab.near=0,  l
     require(wordspace)
 
     if(is.null(col)){col = rep('', length(x))}
-    d = data.frame(x=x, y=y, lab=lab, col=col, stringsAsFactors=FALSE)
+    if(is.null(size)){size = rep(1, length(x))}
+    d = data.frame(x=x, y=y, lab=lab, col=col, size=size, flag='', stringsAsFactors=FALSE)
     
     if(is.null(xlab)){xlab = deparse(substitute(x))}
     if(is.null(ylab)){ylab = deparse(substitute(y))}
     
-    if(lab.n > 0){
-        if(is.null(groups)){
-            breaks = seq(from=min(d$x, na.rm=T), to=max(d$x, na.rm=T), length.out=20)
-	    groups = cut(d$x, breaks=breaks)
+    if(lab.n > 0 | lab.g > 0){
+
+        i = c()
+	
+	if('up' %in% lab.type | 'down' %in% lab.type){
+
+            # get breaks
+	    if(!is.null(groups)){groups.use = groups} else {
+	        breaks = seq(from=min(d$x, na.rm=T), to=max(d$x, na.rm=T), length.out=min(20, lab.n))
+	        groups.use = cut(d$x, breaks=breaks, include.lowest=TRUE)
+	    }
+	    
+	    # get cells
+	    if('up' %in% lab.type){
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=d$y, total_cells=lab.n)))
+		i = c(i, order(-1*d$y)[1:lab.g])
+	    }
+	    if('down' %in% lab.type){
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=-1*d$y, total_cells=lab.n)))
+		i = c(i, order(d$y)[1:lab.g])
+	    }
 	}
-	i = c()
-	if(lab.type %in% c('both', 'up')){
-	    i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups, ngene=d$y, total_cells=lab.n)))
-	    i = c(i, which(order(-1*d$y) <= lab.g))
+	
+	if('right' %in% lab.type | 'left' %in% lab.type){
+
+	    # get breaks
+	    if(!is.null(groups)){groups.use = groups} else {
+	        breaks = seq(from=min(d$y, na.rm=T), to=max(d$y, na.rm=T), length.out=min(20, lab.n))
+	        groups.use = cut(d$y, breaks=breaks, include.lowest=TRUE)
+	    }
+	    
+	    # get cells
+	    if('right' %in% lab.type){
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=d$x, total_cells=lab.n)))
+		i = c(i, order(-1*d$x)[1:lab.g])
+	    }
+	    
+	    if('left' %in% lab.type){
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=-1*d$x, total_cells=lab.n)))
+		i = c(i, order(d$x)[1:lab.g])
+	    }
 	}
-	if(lab.type %in% c('both', 'down')){
-	    i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups, ngene=-1*d$y, total_cells=lab.n)))
-	    i = c(i, which(order(d$y) <= lab.g))
-	}
-	d[unique(i), 'col'] = 'lab.n'
+	d[unique(i), 'flag'] = 'lab.n'
     }
     
     if(!is.null(lab.use)){
 
         # label neighbors
-	u = as.matrix(d[, c('x','y')])
-	v = as.matrix(d[lab %in% lab.use, c('x','y')])
-	i = unique(sort(unlist(apply(dist.matrix(u,v,skip.missing=TRUE,method='euclidean'), 2, order)[1:(lab.near + 1),])))
-	d$col[i] = 'lab.near'
+	if(lab.near > 0){
+	    u = as.matrix(d[, c('x','y')])
+	    v = as.matrix(d[lab %in% lab.use, c('x','y')])
+	    i = unique(sort(unlist(apply(dist.matrix(u,v,skip.missing=TRUE,method='euclidean'), 2, order)[1:(lab.near + 1),])))
+	    d$flag[i] = 'lab.near'
+	}
 	
         # label points
-        d$col[d$lab %in% lab.use] = 'lab.use'
+        d$flag[d$lab %in% lab.use] = 'lab.use'
     }
-    d$lab[d$col == ''] = ''
-    d = d[order(d$col),]
-    levels(d$col) = unique(c('', 'lab.n', 'lab.use', 'lab.near', sort(unique(col))))
     
+    d$lab[d$flag == ''] = ''
+    d = d[order(d$flag),]
+    levels(d$flag) = unique(c('', 'lab.n', 'lab.use', 'lab.near'))
+    
+    if(all(col == '')){d$col = d$flag}
+        
     p = ggplot(d, aes(x=x, y=y)) +
-        geom_point(aes(colour=col)) +
+        geom_point(aes(colour=col, size=size)) +
 	geom_text_repel(aes(label=lab), size=lab.size, segment.color='grey') +
 	theme_cowplot() + xlab(xlab) + ylab(ylab)
     
+    if(all(size == 1)){p = p + scale_size(guide = 'none', range=c(min_size, max_size))} else {p = p + scale_size(name=size.title, range=c(min_size, max_size))}
+        
     if(all(col == '')){
-        p = p + scale_colour_manual(values=c('lightgray', 'black', 'red', 'pink')) + theme(legend.position='none')	
+        p = p + scale_colour_manual(name=col.title, values=c('lightgray', 'black', 'red', 'pink')) + theme(legend.position='none')	
     } else if(is.numeric(d$col)){
-        p = p + scale_colour_distiller(palette=palette, trans='reverse')
+        p = p + scale_colour_distiller(name=col.title, palette=palette, trans='reverse')
     } else {
-        p = p + scale_colour_manual()
+        p = p + scale_colour_manual(name=col.title, values=tsne.colors)
     }
     
     if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}

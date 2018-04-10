@@ -217,15 +217,21 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     if(is.null(data)){map_data = seur@data} else {map_data = data}
     if(is.null(meta)){meta = seur@data.info}
     if(!is.null(groups)){names(groups) = colnames(seur@data)}
-    if(!is.null(scores)){scores = data.frame(scores, row.names=colnames(seur@data))}
-                    
+    if(!is.null(scores)){
+        scores = as.data.frame(scores)
+	if(length(intersect(rownames(scores), colnames(seur@data))) == 0){
+	    rownames(scores) = colnames(seur@data)
+	}
+	scores = scores[colnames(seur@data),,drop=F]
+    }
+    
     # Map genes and feats
     res = map_names(seur=seur, data=map_data, meta=meta, names=names, regex=regex, files=files, file.cols=file.cols, file.regex=file.regex, top=top, source=source, target=target)
     genes = res$genes
     feats = res$feats
     genes.use = unique(do.call(c, genes))
     if(length(genes) == 0 & length(feats) == 0){return(scores)}
-        
+    
     # Select data with genes.use    
     if(is.null(data)){data = get_data(seur, data.use=data.use, cells.use=cells.use)}
     
