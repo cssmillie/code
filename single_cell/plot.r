@@ -620,10 +620,10 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	# Make violin plot
 	p = p +
 	    geom_point(position=position_jitterdodge(dodge.width=0.6, jitter.width=2.5), size=pt.size, show.legend=F) +
-	    geom_violin(scale='width', alpha=alpha) +
+	    geom_violin(scale='width', alpha=alpha, size=.25) +
 	    scale_fill_manual(values=set.colors) + theme_cowplot(font_size=font_size) +
 	    xlab(xlab) + ylab(ylab) + labs(fill=legend.title) +
-	    stat_summary(fun.y=mean, fun.ymin=mean, fun.ymax=mean, geom='crossbar', width=.5, show.legend=F) +
+	    stat_summary(fun.y=mean, fun.ymin=mean, fun.ymax=mean, geom='crossbar', width=.5, show.legend=F, size=.25) +
 	    theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 	if(do.title == TRUE){
@@ -872,7 +872,7 @@ plot_volcanos = function(markers, color_by=NULL, outdir='volcano'){
 
 
 simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, size.title='', lab.use=NULL, lab.near=0,  lab.n=0, lab.g=0, groups=NULL, lab.size=4, lab.type='up', palette=NULL,
-                          xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1, min_size=1, max_size=3){
+                          xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1, min_size=1, max_size=3, xskip=c(0,0), yskip=c(0,0)){
 
     require(ggplot2)
     require(ggrepel)
@@ -882,6 +882,8 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, siz
     if(is.null(col)){col = rep('', length(x))}
     if(is.null(size)){size = rep(1, length(x))}
     d = data.frame(x=x, y=y, lab=lab, col=col, size=size, flag='', stringsAsFactors=FALSE)
+    i.lab = !is.na(d$lab)
+    di = d[i.lab,]
     
     if(is.null(xlab)){xlab = deparse(substitute(x))}
     if(is.null(ylab)){ylab = deparse(substitute(y))}
@@ -894,18 +896,19 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, siz
 
             # get breaks
 	    if(!is.null(groups)){groups.use = groups} else {
-	        breaks = seq(from=min(d$x, na.rm=T), to=max(d$x, na.rm=T), length.out=min(20, lab.n))
-	        groups.use = cut(d$x, breaks=breaks, include.lowest=TRUE)
+	        breaks = seq(from=min(di$x, na.rm=T), to=max(di$x, na.rm=T), length.out=min(20, lab.n))
+	        groups.use = cut(di$x, breaks=breaks, include.lowest=TRUE)
+		groups.use[xskip[[1]] <= di$x & di$x <= xskip[[2]]] = NA
 	    }
 	    
 	    # get cells
 	    if('up' %in% lab.type){
-	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=d$y, total_cells=lab.n)))
-		i = c(i, order(-1*d$y)[1:lab.g])
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=di$y, total_cells=lab.n)))
+		i = c(i, order(-1*di$y)[1:lab.g])
 	    }
 	    if('down' %in% lab.type){
-	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=-1*d$y, total_cells=lab.n)))
-		i = c(i, order(d$y)[1:lab.g])
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=-1*di$y, total_cells=lab.n)))
+		i = c(i, order(di$y)[1:lab.g])
 	    }
 	}
 	
@@ -913,26 +916,28 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, siz
 
 	    # get breaks
 	    if(!is.null(groups)){groups.use = groups} else {
-	        breaks = seq(from=min(d$y, na.rm=T), to=max(d$y, na.rm=T), length.out=min(20, lab.n))
-	        groups.use = cut(d$y, breaks=breaks, include.lowest=TRUE)
+	        breaks = seq(from=min(di$y, na.rm=T), to=max(di$y, na.rm=T), length.out=min(20, lab.n))
+	        groups.use = cut(di$y, breaks=breaks, include.lowest=TRUE)
+		groups.use[yskip[[1]] <= di$y & di$y <= yskip[[2]]] = NA
 	    }
 	    
 	    # get cells
 	    if('right' %in% lab.type){
-	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=d$x, total_cells=lab.n)))
-		i = c(i, order(-1*d$x)[1:lab.g])
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=di$x, total_cells=lab.n)))
+		i = c(i, order(-1*di$x)[1:lab.g])
 	    }
 	    
 	    if('left' %in% lab.type){
-	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(d), groups=groups.use, ngene=-1*d$x, total_cells=lab.n)))
-		i = c(i, order(d$x)[1:lab.g])
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=-1*di$x, total_cells=lab.n)))
+		i = c(i, order(di$x)[1:lab.g])
 	    }
 	}
-	d[unique(i), 'flag'] = 'lab.n'
+	di[unique(i), 'flag'] = 'lab.n'
     }
+    d[i.lab,] = di
     
     if(!is.null(lab.use)){
-
+        
         # label neighbors
 	if(lab.near > 0){
 	    u = as.matrix(d[, c('x','y')])
@@ -947,10 +952,13 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, siz
     
     d$lab[d$flag == ''] = ''
     d = d[order(d$flag),]
-    levels(d$flag) = unique(c('', 'lab.n', 'lab.use', 'lab.near'))
-    
-    if(all(col == '')){d$col = d$flag}
+    d$flag = factor(d$flag, levels=c('lab.n', 'lab.use', 'lab.near', ''), ordered=T)
         
+    if(all(col == '')){d$col = d$flag}
+    
+    # plot labeled points last
+    d = d[rev(order(d$col)),]
+    
     p = ggplot(d, aes(x=x, y=y)) +
         geom_point(aes(colour=col, size=size)) +
 	geom_text_repel(aes(label=lab), size=lab.size, segment.color='grey') +
@@ -959,11 +967,12 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, siz
     if(all(size == 1)){p = p + scale_size(guide = 'none', range=c(min_size, max_size))} else {p = p + scale_size(name=size.title, range=c(min_size, max_size))}
         
     if(all(col == '')){
-        p = p + scale_colour_manual(name=col.title, values=c('lightgray', 'black', 'red', 'pink')) + theme(legend.position='none')	
+        p = p + scale_colour_manual(name=col.title, values=c('black', 'lightgrey', 'red', 'pink')) + theme(legend.position='none')	
     } else if(is.numeric(d$col)){
         p = p + scale_colour_distiller(name=col.title, palette=palette, trans='reverse')
     } else {
-        p = p + scale_colour_manual(name=col.title, values=tsne.colors)
+        if(!is.null(palette)){values=palette} else {values=tsne.colors}
+        p = p + scale_colour_manual(name=col.title, values=values, na.value='#eeeeee', breaks=levels(as.factor(d$col)))
     }
     
     if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}

@@ -153,6 +153,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     if(!is.null(var_regexv)){var_genes = grep(var_regexv, var_genes, invert=T, value=T)}
     msg(name, sprintf('Found %d variable genes', length(var_genes)), verbose)
     seur@var.genes = intersect(var_genes, rownames(seur@data))
+    print(var_genes)
     
     # Batch correction
     if(do.batch != 'none'){
@@ -342,8 +343,8 @@ update_signatures = function(seur){
     genes = rownames(seur@data)
     
     # Calculate signatures
-    seur@data.info = cbind(seur@data.info, get_scores(seur, file='cell_cycle'))
-    seur@data.info = cbind(seur@data.info, get_scores(seur, file='early'))
+    seur@data.info = cbind(seur@data.info, score_cells(seur, files='cell_cycle'))
+    seur@data.info = cbind(seur@data.info, score_cells(seur, files='early'))
     seur@data.info$nGene = colSums(seur@data > 0)
     
     return(seur)

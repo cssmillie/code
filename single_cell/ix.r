@@ -31,7 +31,7 @@ smart_shuffle = function(data, cols.shuf, cols.test=NULL, max_tries=10, max_iter
     as.data.table(data)
 }
 
-make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, permute=FALSE, perm.col='gene', do.intersect=FALSE){
+make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE){
     require(data.table)
     
     # Build cell-cell interaction network from markers and gene pairs
@@ -81,18 +81,6 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, permute=FALSE, per
     }
     genes.use = sort(unique(c(ix$lig, ix$rec)))
     data = data[gene %in% genes.use]
-    
-    # Permute ligands and receptors
-    if(permute == TRUE){
-        shuf_index = data[,.(ident=ident, old=gene)]
-        i = data$gene %in% ix$lig
-	data[i] = smart_shuffle(data[i], perm.col, c('ident', 'gene'))
-	i = data$gene %in% ix$rec
-	data[i] = smart_shuffle(data[i], perm.col, c('ident', 'gene'))
-	shuf_index[,new := data[,gene]]
-    } else {
-        shuf_index = NULL
-    }
     
     # Initialize network
     nodes = sort(unique(data$ident))
@@ -152,15 +140,48 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, permute=FALSE, per
         edges = as.data.table(d$edges)
     }
     
-    return(list(edges=edges, shuf_index=shuf_index))
+    return(edges)
 }
 
-edges2graph = function(edges, weights=NULL, symm=TRUE, unique=TRUE, shuf_index=NULL, node_order=NULL){
+
+permute_edges = function(edges, perm.col='ident'){
+    require(data.table)
+    
+    # Get column to permute
+    if(perm.col == 'ident'){
+        perm.l = 'lcell'
+	perm.r = 'rcell'
+    } else {
+        perm.l = 'lig'
+	perm.r = 'rec'
+    }
+    
+    # Permute ligands
+    map = unique(edges[,.(lcell, lig)])
+    new = smart_shuffle(map, perm.l, c('lcell', 'lig'))
+    map[,new_lcell := new$lcell]
+    setkeyv(map, c('lcell', 'lig'))
+    edges$lcell = map[edges[,.(lcell, lig)], new_lcell]
+    
+    # Permute receptors
+    map = unique(edges[,.(rcell, rec)])
+    new = smart_shuffle(map, perm.r, c('rcell', 'rec'))
+    map[,new_rcell := new$rcell]
+    setkeyv(map, c('rcell', 'rec'))
+    edges$rcell = map[edges[,.(rcell, rec)], new_rcell]
+    
+    # Return edges
+    return(edges)
+}
+
+
+edges2graph = function(edges, weights=NULL, filter_fxn=identity, symm=TRUE, unique=TRUE, shuf_index=NULL, node_order=NULL, permute=FALSE, perm.col='ident'){
     require(data.table)
     
     # Convert edgelist to adjacency matrix
-    # edges = list(1=lcell, 2=rcell, 3=lig, 4=rec, 5=weight)
+    # edges = list(1=lcell, 2=rcell, 3=lig, 4=rec, 5=weight, 6+=columns for edge filtering)
     # weights = list(1=ident, 2=gene, 3=weight)
+    # filter = function for filtering edges
     # symm = make graph symmetric by: x = x + t(x)
     
     # Check input arguments
@@ -168,8 +189,16 @@ edges2graph = function(edges, weights=NULL, symm=TRUE, unique=TRUE, shuf_index=N
         stop('colnames(edges) != lcell, rcell, lig, rec')
     }
     
-    # Fix input data and add weights
+    # Fix edges and (optionally) permute
     edges = as.data.table(edges)
+    if(permute == TRUE){
+        edges = permute_edges(edges, perm.col=perm.col)
+    }
+    
+    # Filter edges
+    edges = filter_fxn(edges)
+    
+    # Get nodes and genes
     if(is.null(node_order)){
         nodes = sort(unique(c(edges$lcell, edges$rcell)))
     } else {
@@ -184,13 +213,11 @@ edges2graph = function(edges, weights=NULL, symm=TRUE, unique=TRUE, shuf_index=N
     if(unique == TRUE){
 
         if(is.null(weights)){
-	    print('using default weights = 1')
 	    ident = c(edges$lcell, edges$rcell)
 	    genes = c(edges$lig, edges$rec)
 	    weights = unique(data.frame(ident=ident, gene=genes))
 	    weights$weight = 1
 	} else if(!is.null(shuf_index)){
-	    print('aligning with shuf_index')
 	    weights = as.data.table(unique(weights))
 	    weights = setkeyv(weights, c('ident', 'gene'))
 	    new = shuf_index[,.(ident, new)]

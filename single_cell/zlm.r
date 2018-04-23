@@ -5,7 +5,9 @@ load_mast()
 # Inputs:
 # - data = data.frame containing all data (gene expression + covariates)
 # - h1 = named list of hypotheses to test
+#   example: list(MZB1 = NLRP7 ~ MZB1 + nGene)
 # - h2 = named list of null hypotheses
+#   example: list(gene = NLRP7 ~ nGene)
 # Returns:
 # - coefficients (coefD, coefC)
 # - p-values (pvalD, pvalC, pvalH)
@@ -38,7 +40,7 @@ run_zlm = function(data, h1, h0){
     
     # get coefficients and p-values for every h1 hypothesis
     sapply(r1, function(a){
-
+        
         coefD = trycatch(t(a$disc$coefficients))
 	coefC = trycatch(t(a$cont$coefficients))
 	pvals = do.call(cbind, sapply(r0, function(b) trycatch(zlm.pvals(a, b)), simplify=F))

@@ -1,4 +1,4 @@
-run_dmap = function(data, n_pcs=0, dpt=FALSE, root_cell=NULL, n_dcs=10, n_branches=1, min_size=.01, aga=FALSE, clusters=NULL, cleanup=TRUE){
+run_dmap = function(data, n_pcs=0, dpt=FALSE, root_cell=NULL, n_neighbors=30, n_dcs=10, n_branches=1, min_size=.01, aga=FALSE, clusters=NULL, cleanup=TRUE){
 
     # -----------------------------------------
     # Run scanpy on [cells x feats] data matrix
@@ -18,7 +18,7 @@ run_dmap = function(data, n_pcs=0, dpt=FALSE, root_cell=NULL, n_dcs=10, n_branch
     if(is.null(root_cell)){iroot = 0} else {iroot = match(root_cell, rownames(data))-1}
     
     # Diffusion map
-    command = paste('python ~/code/single_cell/run_dmap.py --data', out, '--n_pcs', n_pcs, '--n_dcs', n_dcs, '--iroot', iroot, '--out', gsub('.data.*', '', out))
+    command = paste('python ~/code/single_cell/run_dmap.py --data', out, '--n_pcs', n_pcs, '--n_dcs', n_dcs, '--n_neighbors', n_neighbors, '--iroot', iroot, '--out', gsub('.data.*', '', out))
 
     # Pseuodotime
     if(dpt == TRUE){command = paste(command, '--dpt', '--n_branches', n_branches, '--min_size', min_size)}

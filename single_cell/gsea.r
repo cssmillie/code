@@ -89,7 +89,7 @@ fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Panthe
 }
 
 
-gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms=50, max_genes=200, min_genes_per_term=2, max_genes_per_term=20, font_size=8, fix_names=TRUE,
+gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms=50, max_genes=200, min_genes_per_term=2, max_genes_per_term=20, font_size=8, fix_names=TRUE, max_overlap=.5,
                         xstag=FALSE, ystag=FALSE, xsec=FALSE, ysec=FALSE, auto_condense='cols', out=NULL, nrow='auto', ncol='auto', dir='pos', ...){
     require(tibble)
     
@@ -115,7 +115,18 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
     
     # Split genes
     if(! is.list(genes)){genes = strsplit(genes, ',|;| ')}
-    genes = sapply(genes, function(a) na.omit(a[1:max_genes_per_term]))
+    
+    # Remove redundant terms
+    remove = sapply(2:length(genes), function(i){
+        any(sapply(1:(i-1), function(j) {
+	    a = length(intersect(genes[[i]], genes[[j]]))
+	    b = length(genes[[i]])
+	    a/b > max_overlap
+	}))
+    })
+    terms = terms[c(TRUE, !remove)]
+    genes = genes[c(TRUE, !remove)]
+    pvals = pvals[c(TRUE, !remove)]
     
     # Filter by minimum genes per term
     i = sapply(genes, length) >= min_genes_per_term
@@ -123,7 +134,10 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
     genes = genes[i]
     pvals = pvals[i]
     if(length(terms) <= 1 | length(genes) <= 1){return(NULL)}
-    
+
+    # Select max_genes_per_term from each gene list
+    genes = sapply(genes, function(a) a[1:min(length(a), max_genes_per_term)])
+        
     # Filter by maximum total genes
     for(i in 1:length(genes)){if(length(unique(unlist(genes[1:i]))) >= max_genes){break}}
     terms = terms[1:(i-1)]
@@ -133,6 +147,7 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
     
     # Filter by maximum total terms
     if(length(terms) >= max_terms){
+        print(paste('Dropping', max_terms - length(terms), 'terms'))
         terms = terms[1:max_terms]
 	genes = genes[1:max_terms]
 	pvals = pvals[1:max_terms]

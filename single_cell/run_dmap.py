@@ -24,6 +24,7 @@ group1.add_argument('--out', help='Output prefix', default='test')
 # dmap
 group2 = parser.add_argument_group('dmap')
 group2.add_argument('--n_pcs', help='Number of PCs (0 = no PCA)', type=int, default=0)
+group2.add_argument('--n_neighbors', help='Number of nearest neighbors in knn graph', type=int, default=30)
 
 # dpt
 group3 = parser.add_argument_group('dpt')
@@ -70,7 +71,7 @@ if type(clusters) != type(''):
     adata.obs['groups'] = clusters
 
 try:
-    sc.tl.diffmap(adata, n_pcs=args.n_pcs, n_comps=50)
+    sc.tl.diffmap(adata, n_pcs=args.n_pcs, n_comps=50, n_neighbors=args.n_neighbors)
 except:
     pass
 
