@@ -42,8 +42,8 @@ fast_gsea = function(ranks, pathways=NULL, regex='BP|MF|CC|hallmark|canonical', 
 	pathway = pathway[minSize <= sizes & sizes <= maxSize]
 	print(paste(name, 'testing', length(pathway), 'gene sets'))
 	
-	# intersect with gene universe
-	pathway = sapply(pathway, function(a) intersect(a, names(ranks)))
+	# do not modify gene universe
+	# pathway = sapply(pathway, function(a) intersect(a, names(ranks)))
 	
 	# run gsea and sort by NES
         res = fgsea(pathways=pathway, stats=ranks, nperm=nperm, minSize=minSize, maxSize=maxSize, gseaParam=gseaParam)

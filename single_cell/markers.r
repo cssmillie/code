@@ -272,15 +272,17 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
 }
 
 
-p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25, max_cells=1000,
-                          batch.use=NULL,
+p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.use='tpm', data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25,
+                          max_cells=1000, batch.use=NULL,
 	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1,
 			  filter_genes=TRUE){
+
+    # Get cell identities
+    if(is.null(ident.use)){ident.use = seur@ident}
     
     # Build covariates
     print(c(ident.1, ident.2))
     if(!is.null(ident.1)){
-        ident.use = seur@ident
 	if(is.null(ident.2)){
 	    ident.use = as.factor(ifelse(ident.use == ident.1, ident.1, 'Other'))
 	    ident.use = relevel(ident.use, 'Other')
@@ -377,11 +379,12 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, tpm.use='tpm', data.
 }
 
 
-p.find_all_markers = function(seur, data.use='log2', tpm=NULL, do.precalc=T, n.cores=1, ...){
+p.find_all_markers = function(seur, ident.use=NULL, data.use='log2', tpm=NULL, do.precalc=T, n.cores=1, ...){
     
     # Get cell identities
-    idents = as.character(levels(seur@ident))
-    
+    if(is.null(ident.use)){ident.use = seur@ident}
+    idents = as.character(levels(ident.use))
+        
     # Pre-calculate TPM and data
     if(do.precalc == TRUE){
         tpm = get_data(seur, data.use='tpm', tpm=tpm)
@@ -392,7 +395,7 @@ p.find_all_markers = function(seur, data.use='log2', tpm=NULL, do.precalc=T, n.c
     run_parallel(
 	foreach(i=idents, .combine=rbind) %dopar% {
 	    print(i)
-	    p.find_markers(seur, ident.1=i, tpm=tpm, data.use=data.use, n.cores=1, ...)
+	    p.find_markers(seur, ident.1=i, ident.use=ident.use, tpm=tpm, data.use=data.use, n.cores=1, ...)
 	},
 	n.cores = n.cores
     )
@@ -681,4 +684,21 @@ next_stats = function(markers, anno=NULL, filter=identity){
     markers[, next_log2fc := ifelse(is.na(next_mean), Inf, mean - next_mean)]
     
     return(markers)
+}
+
+write_mast = function(markers, max_pval=.05, max_padj=1, regex='', prefix='test'){
+    source('~/code/util/excel.r')
+    library(naturalsort)
+    markers = markers[order(padjD)][pvalD <= max_pval][padjD <= max_padj]
+    markers = markers[grep(regex, contrast)]
+    m.pos = markers[coefD > 0]
+    m.neg = markers[coefD < 0]
+    m.pos = split(m.pos, m.pos$ident)
+    m.neg = split(m.neg, m.neg$ident)
+    m.pos = m.pos[naturalsort(names(m.pos))]
+    m.neg = m.neg[naturalsort(names(m.neg))]
+    if(length(unique(m.pos$contrast)) > 1){stop('Multiple contrasts per ident')}
+    if(length(unique(m.neg$contrast)) > 1){stop('Multiple contrasts per ident')}
+    write_excel(m.pos, out=paste0(prefix, '.pos.xlsx'))
+    write_excel(m.neg, out=paste0(prefix, '.neg.xlsx'))
 }

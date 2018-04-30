@@ -175,22 +175,22 @@ permute_edges = function(edges, perm.col='ident'){
 }
 
 
-edges2graph = function(edges, weights=NULL, filter_fxn=identity, symm=TRUE, unique=TRUE, shuf_index=NULL, node_order=NULL, permute=FALSE, perm.col='ident'){
+edges2graph = function(edges, filter_fxn=identity, symm=TRUE, unique=TRUE, node_order=NULL, permute=FALSE, perm.col='ident'){
     require(data.table)
     
     # Convert edgelist to adjacency matrix
-    # edges = list(1=lcell, 2=rcell, 3=lig, 4=rec, 5=weight, 6+=columns for edge filtering)
-    # weights = list(1=ident, 2=gene, 3=weight)
+    # edges = list(1=lcell, 2=rcell, 3=lig, 4=rec, 5=lweight, 6=rweight, 7+=columns for edge filtering)
     # filter = function for filtering edges
     # symm = make graph symmetric by: x = x + t(x)
+    # unique = count unique ligands and receptors
     
-    # Check input arguments
-    if(! all(c('lcell', 'rcell', 'lig', 'rec') %in% colnames(edges))){
-        stop('colnames(edges) != lcell, rcell, lig, rec')
+    # Check formatting
+    edges = as.data.table(edges)
+    if(! all(c('lcell', 'rcell', 'lig', 'rec', 'lweight', 'rweight') %in% colnames(edges))){
+        stop('colnames(edges) != lcell, rcell, lig, rec, lweight, rweight')
     }
     
-    # Fix edges and (optionally) permute
-    edges = as.data.table(edges)
+    # Permute ligands and receptors
     if(permute == TRUE){
         edges = permute_edges(edges, perm.col=perm.col)
     }
@@ -211,36 +211,16 @@ edges2graph = function(edges, weights=NULL, filter_fxn=identity, symm=TRUE, uniq
     rownames(graph) = colnames(graph) = nodes
     
     if(unique == TRUE){
-
-        if(is.null(weights)){
-	    ident = c(edges$lcell, edges$rcell)
-	    genes = c(edges$lig, edges$rec)
-	    weights = unique(data.frame(ident=ident, gene=genes))
-	    weights$weight = 1
-	} else if(!is.null(shuf_index)){
-	    weights = as.data.table(unique(weights))
-	    weights = setkeyv(weights, c('ident', 'gene'))
-	    new = shuf_index[,.(ident, new)]
-	    old = shuf_index[,.(ident, old)]
-	    weights[new]$weight = weights[old]$weight
-	}
-	weights = as.data.table(unique(weights))
-	weights = setkeyv(weights, c('ident', 'gene'))
-	
+        
         # Get unique ligands and receptors
-        lig = unique(edges[,.(lcell, rcell, lig)])
-        rec = unique(edges[,.(lcell, rcell, rec)])
+    	lig = unique(edges[,.(lcell, rcell, lig, lweight)])
+    	rec = unique(edges[,.(lcell, rcell, rec, rweight)])
         
-        # Add edge weights
-        lig[, weight := weights[.(lcell, lig)]$weight]
-	rec[, weight := weights[.(rcell, rec)]$weight]
-	if(any(is.na(lig$weight)) | any(is.na(rec$weight))){stop('Error: NA weights (give pre-shuffle weights with shuf_index)')}
-	
-        # Aggregate edge weights
-        lig = lig[, .(weight=sum(weight)), .(lcell, rcell)]
-        rec = rec[, .(weight=sum(weight)), .(lcell, rcell)]
-        
-        # Convert to matrix
+    	# Aggregate edge weights
+    	lig = lig[, .(weight=sum(lweight)), .(lcell, rcell)]
+    	rec = rec[, .(weight=sum(rweight)), .(lcell, rcell)]
+    	
+    	# Convert to matrix
         lig = data.frame(spread(lig, rcell, weight), row.names=1)
         rec = data.frame(spread(rec, rcell, weight), row.names=1)
         lig[is.na(lig)] = 0
@@ -250,17 +230,12 @@ edges2graph = function(edges, weights=NULL, filter_fxn=identity, symm=TRUE, uniq
         x = y = graph
         x[rownames(lig), colnames(lig)] = lig
         y[rownames(rec), colnames(rec)] = rec   
-        graph = as.matrix(x + y)
+        graph = as.matrix(x + y)	
 	
     } else {
         
-	if(! 'weight' %in% colnames(edges)){
-	    cat('\nUsing default weight=1\n')
-	    edges[,weight := 1]
-	}
-	
         # Aggregate edge weights
-	edges = edges[, .(weight=sum(weight)), .(lcell, rcell)]
+	edges = edges[, .(weight=sum(lweight + rweight)), .(lcell, rcell)]
 	
 	# Convert to matrix
 	edges = data.frame(spread(edges, rcell, weight), row.names=1)

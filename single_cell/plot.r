@@ -872,7 +872,7 @@ plot_volcanos = function(markers, color_by=NULL, outdir='volcano'){
 
 
 simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, size.title='', lab.use=NULL, lab.near=0,  lab.n=0, lab.g=0, groups=NULL, lab.size=4, lab.type='up', palette=NULL,
-                          xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1, min_size=1, max_size=3, xskip=c(0,0), yskip=c(0,0)){
+                          xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1, min_size=1, max_size=3, xskip=c(0,0), yskip=c(0,0), xlim=NULL, ylim=NULL, alpha=1){
 
     require(ggplot2)
     require(ggrepel)
@@ -952,22 +952,27 @@ simple_scatter = function(x, y, lab=NULL, col=NULL, col.title='', size=NULL, siz
     
     d$lab[d$flag == ''] = ''
     d = d[order(d$flag),]
-    d$flag = factor(d$flag, levels=c('lab.n', 'lab.use', 'lab.near', ''), ordered=T)
+    d$flag = factor(d$flag, levels=c('', 'lab.n', 'lab.use', 'lab.near'), ordered=T)
         
     if(all(col == '')){d$col = d$flag}
     
     # plot labeled points last
-    d = d[rev(order(d$col)),]
-    
+    d = d[order(d$col),]
+    i = is.na(d$col) | d$col == ''
+    d = rbind(d[i,], d[!i,])
+        
     p = ggplot(d, aes(x=x, y=y)) +
-        geom_point(aes(colour=col, size=size)) +
+        geom_point(aes(colour=col, size=size), alpha=alpha, stroke=0) +
 	geom_text_repel(aes(label=lab), size=lab.size, segment.color='grey') +
 	theme_cowplot() + xlab(xlab) + ylab(ylab)
     
     if(all(size == 1)){p = p + scale_size(guide = 'none', range=c(min_size, max_size))} else {p = p + scale_size(name=size.title, range=c(min_size, max_size))}
-        
+
+    if(!is.null(xlim)){p = p + xlim(xlim)}
+    if(!is.null(ylim)){p = p + ylim(ylim)}
+
     if(all(col == '')){
-        p = p + scale_colour_manual(name=col.title, values=c('black', 'lightgrey', 'red', 'pink')) + theme(legend.position='none')	
+        p = p + scale_colour_manual(name=col.title, values=c('lightgrey', 'black', 'red', 'pink')) + theme(legend.position='none')	
     } else if(is.numeric(d$col)){
         p = p + scale_colour_distiller(name=col.title, palette=palette, trans='reverse')
     } else {
