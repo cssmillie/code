@@ -15,7 +15,7 @@ load_map = function(fn, key, value){
 	expand.grid(k,v)
     })))
     colnames(x) = c('k', 'v')
-
+    
     # Aggregate by key
     x = data.frame(aggregate(v ~ k, x, function(a){c(as.character(a))}), row.names=1, stringsAsFactors=F)
     x = structure(x[,1], names=rownames(x))
@@ -90,7 +90,7 @@ basest_key = function(map, keys){
 }
 
 
-load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', value='name', fix=c('description')){
+load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', value='name', fix=c('desc', 'description', 'final')){
     
     # Load annotation map
     x = load_map(fn, key, value)

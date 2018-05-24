@@ -27,6 +27,6 @@ for i in range(len(fwd)):
     assert re.sub('R1', '', fi) == re.sub('R2', '', ri)
     name = args.join.join(re.search(args.regex, fi).groups())
     if args.cells:
-        print('%s\t%s\t%s\t%s' %(name, fi, ri, args.cells))
+        print '%s\t%s\t%s\t%s' %(name, fi, ri, args.cells)
     else:
-        print('%s\t%s\t%s' %(name, fi, ri))
+        print '%s\t%s\t%s' %(name, fi, ri)

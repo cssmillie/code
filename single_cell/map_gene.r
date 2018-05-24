@@ -45,11 +45,16 @@ fix_names = function(names){
 }
 
 
-get_synonyms = function(genes, target='human'){
+get_synonyms = function(genes, target='human', do.unlist=TRUE){
     genes = fix_names(genes)
     if(target == 'human'){genes = hsyn[genes,1]}
     if(target == 'mouse'){genes = msyn[genes,1]}
-    unlist(strsplit(genes, ','))
+    if(do.unlist == TRUE){
+        genes = unlist(strsplit(genes, ','))
+    } else {
+        genes = strsplit(genes, ',')
+    }
+    genes
 }
 
 
@@ -63,7 +68,7 @@ get_orthologs = function(genes, source='mouse', target='human'){
 }
 
 
-map_gene = function(genes, target='human', source='auto'){
+map_gene = function(genes, target='human', source='auto', do.unlist=TRUE){
     
     # predict source organism from gene list
     # --------------------------------------
@@ -81,7 +86,7 @@ map_gene = function(genes, target='human', source='auto'){
     # -------------------------------------
     
     if(source == target){
-        get_synonyms(genes, target=target)
+        get_synonyms(genes, target=target, do.unlist=do.unlist)
     } else {
         get_orthologs(genes, source=source, target=target)
     }

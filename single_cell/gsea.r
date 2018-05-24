@@ -289,7 +289,7 @@ gsealist_heatmap = function(glist, regex='', name='BP', n=3, n.plot=Inf, max_pva
 }
 
 
-score_signatures = function(seur, signatures, group_by=NULL, cells.use=NULL){
+score_signatures2 = function(seur, signatures, group_by=NULL, cells.use=NULL){
     
     # Fix input arguments
     data = seur@data
@@ -528,4 +528,34 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
     
     names(go_terms) = clusters
     return(go_terms)
+}
+
+load_kegg = function(names.use=NULL, names.rmv=NULL, do.flatten=FALSE, no_spaces=FALSE){
+    kegg = readRDS('/ahg/regevdata/projects/Gut_Human/analysis_0417/home/db/kegg/3.kegg.human.rds')
+    
+    kegg = sapply(names(kegg), function(A)
+               sapply(names(kegg[[A]]), function(B)
+	           sapply(names(kegg[[A]][[B]]), function(C) {
+		       if(!is.null(names.use)){if(!(A %in% names.use | B %in% names.use | C %in% names.use)){return(NULL)}}
+		       if(!is.null(names.rmv)){if(A %in% names.rmv | B %in% names.rmv | C %in% names.rmv){return(NULL)}}
+		       as.character(na.omit(kegg[[A]][[B]][[C]]))
+		   }, simplify=F),
+	       simplify=F),
+	   simplify=F)
+
+    if(no_spaces == TRUE){
+        for(A in names(kegg)){
+	    for(B in names(kegg[[A]])){
+	        names(kegg[[A]][[B]]) = gsub(' ', '_', names(kegg[[A]][[B]]))
+	    }
+	    names(kegg[[A]]) = gsub(' ', '_', names(kegg[[A]]))
+	}
+	names(kegg) = gsub(' ', '_', names(kegg))
+    }
+
+    if(do.flatten == TRUE){
+        kegg = unlist(unlist(kegg, recursive=FALSE), recursive=FALSE)
+	kegg = kegg[!sapply(kegg, is.null)]
+    }
+    kegg
 }

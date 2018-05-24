@@ -14,7 +14,6 @@ make_edges = function(data, pairs, subset=NULL, binary=FALSE, symmetric=TRUE, ma
     library(data.table)
     
     # format data
-    print(data)
     if(ncol(data) == 3){
         colnames(data) = c('cell', 'gene', 'value')
 	data = data.frame(spread(data, gene, value, fill=0), row.names=1)
@@ -111,7 +110,7 @@ make_edges = function(data, pairs, subset=NULL, binary=FALSE, symmetric=TRUE, ma
 }
 
 
-rescale_vector = function(x, target=c(0, 1), f=identity, abs=TRUE){
+rescale_vector = function(x, target=c(0, 1), f=identity, abs=FALSE){
     # map vector onto target interval, then apply f
     a = target[[1]]
     b = target[[2]]
@@ -185,7 +184,8 @@ plot_network = function(edges, labels=NULL, label_n=25, f_weights=identity, resc
 }
 
 
-ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=NULL, scale_nodes=c(0,10), scale_edges=c(0,1), alpha=1, symm=TRUE, do.legend=TRUE, legend_title=NULL, out=NULL, nrow=1, ncol=1){
+ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=NULL, edge_color='#cccccc', edge_colors=NULL, scale_nodes=c(0,10), scale_edges=c(.25,1), curvature=0,
+                          alpha=1, symm=TRUE, do.legend=TRUE, legend_title=NULL, out=NULL, nrow=1, ncol=1, qmax=1, ggtitle='', layout='fruchtermanreingold', layout.weights=TRUE){
     
     library(ggplot2)
     library(tidyverse)
@@ -195,20 +195,36 @@ ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=N
 
     # plot network from graph or edgelist
     # -----------------------------------
-
-    # graph = [m x n] adjacency graph
-    # edges = data.frame(1=source, 2=target, 3=weight)
-    # node_sizes = unnamed list (size1, size2, ...) or named list, list(node1=size1, node2=size2, ...)
-    # node_colors = unnamed list (color1, color2, ...) or named list, list(node1=color1, node2=color2, ...)
+    # graph = [m x n] matrix
+    # edges = data.frame(1=source, 2=target, 3=weight, 4=color)
+    # node_sizes = list(node_label = size)
+    # node_colors = list(node_label = color)
+    # edge_colors = [m x n] matrix
     
-    # convert data to long format
-    if(!is.null(graph)){edges = gather(as.data.frame(graph) %>% rownames_to_column('source'), target, weight, -source)}
-    if(!is.null(node_sizes) & is.null(names(node_sizes))){names(node_sizes) = rownames(graph)}
-    if(!is.null(node_colors) & is.null(names(node_colors))){names(node_colors) = rownames(graph)}
-    nodes = sort(unique(c(rownames(graph), colnames(graph))))
-    if(is.null(node_sizes)){node_sizes = structure(rep(1, length(nodes)), names=nodes)}
+    # convert graph to edgelist
+    if(!is.null(graph)){
+        graph = as.data.frame(as.matrix.data.frame(as.data.frame(graph)))
+	edges = gather(graph %>% rownames_to_column('source'), target, weight, -source)
+    }
+    if(ncol(edges) == 3){colnames(edges) = c('source', 'target', 'weight')}
+    
+    # convert colors to edgelist
+    if(!is.null(edge_colors)){
+        edge_colors = as.data.frame(as.matrix.data.frame(as.data.frame(edge_colors)))
+	edge_colors = gather(edge_colors %>% rownames_to_column('source'), target, color, -source)
+	edges = merge(edges, edge_colors, by=c('source', 'target'))
+    }
+    if(! 'color' %in% colnames(edges)){edges$color = edge_color}
+    
+    # convert node_sizes to list
+    nodes = sort(unique(c(edges$source, edges$target)))    
+    if(!is.null(node_sizes) & is.null(names(node_sizes))){names(node_sizes) = rownames(graph)} # assume graph
+    if(is.null(node_sizes)){node_sizes = setNames(rep(1, length(nodes)), nodes)}
+    
+    # convert node_colors to list
+    if(!is.null(node_colors) & is.null(names(node_colors))){names(node_colors) = rownames(graph)} # assume graph
     if(is.null(node_colors)){node_colors = structure(rep(1, length(nodes)), names=nodes)}
-        
+    
     # remove duplicate edges
     if(symm == TRUE){
         i = apply(edges[,1:2], 1, function(a) paste(sort(a), collapse=' '))
@@ -216,12 +232,12 @@ ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=N
     }
     
     # adjust edge weights
-    edges = edges[edges$weight > 0,]
-    edges = edges[edges$source != edges$target,]
+    edges = edges[edges$weight > 0,,drop=F]
+    edges = edges[edges$source != edges$target,,drop=F]
     if(!is.null(scale_edges)){
         edges$weight = rescale_vector(edges$weight, target=scale_edges, abs=TRUE)
     }
-    
+        
     # convert edges to igraph object
     g = graph.data.frame(edges)
     
@@ -229,7 +245,7 @@ ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=N
     nodes = V(g)$name
     
     # node sizes
-    if(length(node_sizes) > 1){
+    if(length(unique(node_sizes)) > 1){
         node_sizes = node_sizes[nodes]
         if(!is.null(scale_nodes)){
             node_sizes = rescale_vector(node_sizes, target=scale_nodes)
@@ -239,29 +255,41 @@ ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=N
     
     # node colors
     if(length(node_colors) > 1){
+        i = levels(node_colors)
         node_colors = node_colors[nodes]
+	levels(node_colors) = i
     }
     V(g)$node_color = as.character(node_colors)
     
-    # edge colors
-    if(TRUE){
-        E(g)$edge_color = '#cccccc'
-    } else {
-        E(g)$edge_color = '#cccccc'
-    }
-
     # igraph -> data.frame for ggplot2
-    n = ggnetwork(g, weights='weight')
-    n$node_color = as.character(n$node_color)
+    if(layout.weights == TRUE){
+        n = ggnetwork(g, layout=layout, weights='weight', arrow.gap=0)
+    } else {
+        n = ggnetwork(g, layout=layout, arrow.gap=0)
+    }
+        
+    if(nlevels(node_colors) > 0){
+        n$node_color = factor(n$node_color, levels=levels(node_colors))
+    }
     
     # plot with ggnetwork
     if(is.null(out)){alpha = 1}
-    p = ggplot(n, aes(x=x, y=y, xend=xend, yend=yend)) +
-	geom_edges(color='#cccccc', size=na.omit(n$weight), alpha=alpha) +
-        geom_nodes(aes(color=node_color), size=6) + 
-	geom_nodetext_repel(aes(label=vertex.names)) +
-	scale_color_manual(legend_title, values=tsne.colors) +
-	theme_blank()
+
+    if(length(unique(n$node_color)) > 1){
+        p = ggplot(n, aes(x=x, y=y, xend=xend, yend=yend)) +
+	    geom_edges(color='#cccccc', size=na.omit(n$weight), alpha=alpha, curvature=curvature) +
+	    geom_nodes(aes(color=node_color), size=6) +	    
+	    scale_color_manual(legend_title, breaks=levels(n$node_color), labels=levels(n$node_color), values=set.colors, drop=FALSE)
+	    
+    } else {
+        p = ggplot(n, aes(x=x, y=y, xend=xend, yend=yend)) +
+	    geom_edges(color=na.omit(n$color), size=na.omit(n$weight), alpha=alpha, curvature=curvature) +
+	    geom_nodes(color='#0191C8', size=6)
+    }
+    
+    p = p + geom_nodetext_repel(aes(label=vertex.names)) + theme_blank()
+        
+    if(ggtitle != ''){p = p + ggtitle(ggtitle)}
     
     if(do.legend == FALSE){p = p + theme(legend.position='none')}
 

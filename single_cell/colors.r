@@ -54,3 +54,29 @@ tol10qualitative=c("#332288", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC
 tol11qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#882255", "#AA4499")
 tol12qualitative=c("#332288", "#6699CC", "#88CCEE", "#44AA99", "#117733", "#999933", "#DDCC77", "#661100", "#CC6677", "#AA4466", "#882255", "#AA4499")
 
+
+# material colors
+# ---------------
+
+material = read.table('~/code/single_cell/material_colors.txt', row.names=1, comment.char='', stringsAsFactors=F)
+rownames(material) = tolower(rownames(material))
+
+shades = function(color, n){
+    colorRampPalette(material[color,])(n)
+}
+disc.colors = function(n, shade=6){
+    disc.order = c('red', 'light_blue', 'amber', 'green', 'grey')
+    if(n <= length(disc.order)){
+        material[disc.order[1:n], shade]
+    } else if(n <= nrow(material)){
+        material[as.integer(seq(from=1, to=nrow(material), length.out=n)), shade]
+    } else {
+        colorRampPalette(material[,shade])(n)
+    }
+}
+cont.colors = function(shade=6){
+    colorRampPalette(material[,shade])(100)
+}
+name.colors = function(names, shade=6){
+    material[names, shade]
+}

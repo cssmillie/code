@@ -282,9 +282,14 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	# returns [genes x groups] matrix
 	
 	if(is.null(groups)){return(x)}
-	if(method == 'alpha'){x = x > 0}
-	if(method == 'mu'){x[x == 0] = NA}
-	x = t(data.frame(aggregate(t(x), list(groups), mean, na.rm=T), row.names=1))
+	if(method == 'n'){
+	    x = x > 0
+	    x = t(data.frame(aggregate(t(x), list(groups), sum, na.rm=T), row.names=1))
+	} else {
+	    if(method == 'alpha'){x = x > 0}
+	    if(method == 'mu'){x[x == 0] = NA}
+	    x = t(data.frame(aggregate(t(x), list(groups), mean, na.rm=T), row.names=1))
+	}
 	x[is.na(x)] = 0
 	x
     }
@@ -351,3 +356,54 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     
     return(scores)
 }
+
+
+score_signatures = function(seur=NULL, gene_sets=NULL, cells.use=NULL, cells.bg=NULL, data.use='log2', g=20, nperm=100, do.collapse=TRUE){
+    library(Hmisc)
+    
+    # fix input arguments
+    data = get_data(seur, data.use=data.use, cells.use=cells.use)
+    if(!is.list(gene_sets)){gene_sets = list(gene_sets)}
+    if(is.null(cells.bg)){
+        cells.bg = colnames(data)
+    } else {
+        cells.bg = intersect(cells.bg, colnames(data))
+    }
+    
+    # divide genes into g equal-frequency expression bins
+    g2b = setNames(cut2(rowMeans(data[,cells.bg]), g=g), rownames(data))
+    b2g = sapply(levels(g2b), function(a) names(g2b)[g2b == a])
+    
+    # iterate over gene sets
+    sapply(names(gene_sets), function(name.use){print(name.use)
+
+        tryCatch({
+    	
+        genes.use = intersect(gene_sets[[name.use]], rownames(data))
+        
+    	# get background gene sets
+    	genes.bg = sapply(genes.use, function(gene){
+            bin = g2b[[gene]]
+	    sample(b2g[[bin]], nperm, replace=TRUE)
+        })
+        
+        # calculate signature scores
+        true = t(data[genes.use,])
+        null = apply(genes.bg, 2, function(a) colMeans(data[a,]))
+	
+        # average score across genes
+    	if(do.collapse == TRUE){
+            true = rowMeans(true)
+	    null = rowMeans(null)
+	    true - null
+        } else {
+            list(true=true, null=null)
+        }
+
+	}, error = function(e){
+	    setNames(rep(NA, ncol(data)), colnames(data))
+	})
+	
+    }, simplify=F)
+}
+

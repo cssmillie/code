@@ -8,8 +8,8 @@ write_excel = function(data, out, max_rows=500, row.names=FALSE){
     # out = output file (.xls)
     
     for(name in names(data)){print(paste('Writing', name))
-        di = data[[name]]
-	di = di[1:min(max_rows, nrow(di))]
+        di = as.data.frame(data[[name]])
+	di = di[1:min(max_rows, nrow(di)),]
         write.xlsx(di, file=out, sheetName=name, append=TRUE, row.names=row.names)
     }
 }

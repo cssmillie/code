@@ -71,7 +71,8 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NU
     print(groups)
     
     # iterate over groups
-    res = run_parallel(foreach(group=groups) %dopar% {print(group)
+    #res = run_parallel(foreach(group=groups) %dopar% {print(group)
+    res = sapply(groups, function(group){
         
         # output file
         out = paste(prefix, group, 'fit.png', sep='.')
@@ -126,7 +127,8 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NU
 	
 	# update results
 	list(u1=u1, u2=u2, fit=fit, coefs=coefs, residuals=residuals, lab.use=lab.use, lab.fit=lab.fit, lab.con=lab.con)
-    }, n.cores = n.cores)
+    #}, n.cores = n.cores)
+    }, simplify=F)
     
     names(res) = groups
     cat(paste('\ndetect_contamination: finished\n', names(res), '\n'))

@@ -1,4 +1,4 @@
-gene_modules2 = function(seur, ident, data, gene, num_pcs=10, method='pearson', scale=FALSE){
+gene_modules = function(seur, ident, data, gene, num_pcs=10, method='pearson', scale=FALSE){
     
     require(rsvd)
     require(ppcor)
@@ -46,35 +46,28 @@ gene_modules2 = function(seur, ident, data, gene, num_pcs=10, method='pearson', 
     list(mod1, mod2, mod3, mod4, mod5)
 }
 
-gene_modules = function(data, gene, ngene, num_pcs=10, method='pearson', scale=FALSE){
-    
-    require(rsvd)
-    require(ppcor)
-    
-    # fix input arguments
-    data = as.data.frame(data)
-    ngene = scale(ngene)
-    
-    # type 1 = correlation
-    mod1 = sort(cor(data[,gene], data, method=method)[1,])
-    
-    # type 2 = partial correlation
-    mod2 = sort(sapply(data, function(a) tryCatch(pcor.test(data[,gene], a, ngene, method=method)$estimate, error=function(e) NA)))
-    
-    # calculate pca
-    pca.obj = rpca(data, center=FALSE, scale=FALSE, retx=TRUE, k=20)
-    
-    # type 3 = gene loadings
-    mod3 = t(pca.obj$rotation)
-    mod3 = sort(cor(mod3[,gene], mod3, method=method)[1,])
-    
-    # type 4 = linear model
-    x = as.data.frame(pca.obj$x[,1:num_pcs])
-    colnames(x) = paste0('PC', 1:ncol(x))
-    x$nGene = ngene
-    x = as.matrix(x)
-    r = sapply(data, function(a) .lm.fit(x, a)$residuals)
-    mod4 = sort(cor(r[,gene], r, method=method)[1,])
 
-    list(mod1=mod1, mod2=mod2, mod3=mod3, mod4=mod4)
+mi_modules = function(data, genes.use, cells.use=NULL, nbins=8){
+    library(data.table)
+    library(entropy)
+    
+    # fix data
+    data = as.data.frame(data)    
+    if(!is.null(cells.use)){
+        cells.use = intersect(cells.use, rownames(data))
+        data = data[cells.use,]
+    }
+    if(nrow(data) == 0){
+        stop('error: cell names')
+    }
+    if(sum(is.na(data)) > 0){
+        stop('error: missing values')
+    }
+        
+    # discretize
+    data = data[,sapply(data, sd) > 0]
+    data = lapply(data, function(a) cut(a, 8, include.lowest=T))
+
+    # pairwise mutual information
+    sapply(genes.use, function(a) sapply(data, function(b) tryCatch({mi.empirical(table(data[[a]], b))}, error=function(e){NA})))
 }
