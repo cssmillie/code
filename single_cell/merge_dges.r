@@ -81,9 +81,11 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE)
     colnames(counts) = gsub('^\\.', '', colnames(counts))
     
     # Filter matrix
+    print(dim(counts))
     genes.use = rowSums(counts > 0) >= minc
     cells.use = grepl(pattern, colnames(counts)) & (colSums(counts > 0) >= ming)
     counts = counts[genes.use, cells.use]
+    print(dim(counts))
     
     # Print and return
     cat(paste0('\nRead ', path, ' [', nrow(counts), ' x ', ncol(counts), ']\n'))

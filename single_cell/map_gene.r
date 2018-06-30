@@ -59,12 +59,13 @@ get_synonyms = function(genes, target='human', do.unlist=TRUE){
 
 
 get_orthologs = function(genes, source='mouse', target='human'){
-    genes = get_synonyms(genes, target=source)
-    genes = fix_names(genes)
-    if(target == 'mouse'){ortho = h2m[genes,1]}
-    if(target == 'human'){ortho = m2h[genes,1]}
-    ortho = unlist(strsplit(ortho, ','))
-    get_synonyms(ortho, target=target)
+    genes = setNames(get_synonyms(genes, target=source, do.unlist=F), genes)
+    genes = lapply(genes, fix_names)
+    if(target == 'mouse'){ortho = lapply(genes, function(a) h2m[a,1])}
+    if(target == 'human'){ortho = lapply(genes, function(a) m2h[a,1])}
+    ortho = lapply(ortho, get_synonyms, target=target, do.unlist=T)
+    ortho = lapply(ortho, function(a) sort(unique(a)))
+    ortho
 }
 
 

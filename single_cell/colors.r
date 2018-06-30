@@ -80,3 +80,6 @@ cont.colors = function(shade=6){
 name.colors = function(names, shade=6){
     material[names, shade]
 }
+
+set3.colors = c('#80b1d3', '#fdb462', '#b3de69')
+set3.colors = c(set3.colors, setdiff(brewer.pal(12, 'Set3'), set3.colors))

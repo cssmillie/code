@@ -207,8 +207,8 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     
     # Score gene expression across cells and optionally aggregate
     # The default steps are:
-    # 1) Select data (data.use = 'tpm', 'log2', or 'scale')
-    # 2) Calculate mean expression across genes (combine_genes = 'sum', 'mean', or 'gmean')
+    # 1) Select data (data.use = 'tpm', 'log2', 'scale')
+    # 2) Calculate mean expression across genes (combine_genes = 'sum', 'mean', 'geom', 'max', 'norm', 'scale', 'scale2')
     # 3) Calculate mean expression within each cell type (group_by, group_stat = 'mean', 'alpha', 'mu')
     # 4) Log transform results (do.log)
     # If genes_first == FALSE, then calculate the group means *before* combining across genes
@@ -242,7 +242,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
         if(!is.null(groups)){groups = groups[cells.use]}
 	if(!is.null(scores)){scores = scores[cells.use,,drop=F]}
     }
-    
+        
     group_genes = function(x, method){
         
         # combine expression data across genes within a signature
@@ -266,6 +266,9 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	    t(colMeans(x))
 	} else if(method == 'scale'){
 	    x = t(scale(t(x)))
+	    t(colMeans(x))
+	} else if(method == 'scale2'){
+	    x = t(scale(t(x), center=F))
 	    t(colMeans(x))
 	} else if(method == 'none'){
 	    x
@@ -308,7 +311,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     } else {
         names.iter = names.use
     }
-        
+    
     backup = scores
     scores = lapply(names.iter, function(name){
         
@@ -316,7 +319,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	if(name %in% names(genes)){si = data[genes[[name]],,drop=F]} else {si = c()}
 	if(name %in% names(feats)){if(is.null(si)){si = t(meta[,feats[[name]],drop=F])} else {si = rBind(si, t(meta[,feats[[name]],drop=F]))}}
 	si = as.matrix(si)
-	
+		
 	if(genes_first == TRUE){
 	    si = group_genes(si, method=combine_genes)
 	    si = group_cells(si, groups=groups, method=group_stat)
@@ -328,7 +331,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	if(do.log == TRUE){
 	    si = psi_log(si, base=2)
 	}
-	as.data.frame(t(si))
+	si = data.frame(t(si))
     })
     
     # Collapse scores

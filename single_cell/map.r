@@ -69,23 +69,48 @@ flatten_keys = function(map, keys){
 }
 
 
-basest_key = function(map, keys){
-
+basest_key = function(map, keys, multi=FALSE){
+    
     # Find the "basest" key in a tree-structured map
     # Example:
     # anno = load_anno(key='name', value='ident')
     # keys = c('Tuft', 'Secretory', 'Epithelial')
-    # basest_keys(keys) = 'Tuft'
+    # basest_key(keys) = 'Tuft'
     
     # Test data structure
     keys = as.character(keys)
-    test = all(sapply(map[keys], function(a) sapply(map[keys], function(b) all(a %in% b) | all(b %in% a))))
-    
+    if(length(keys) == 1){return(keys)}
+    test = sapply(map[keys], function(a) sapply(map[keys], function(b) all(a %in% b)))
+    diag(test) = FALSE
+        
     # Return basest group
-    if(test == TRUE){
+    if(all(test) == TRUE){
         names(which.min(sapply(map[keys], length)))
+    } else if(multi == TRUE) {
+        keys[! apply(test, 1, any)]
     } else {
-        stop('Annotation map is not hierarchically structured')
+        stop('map not hierarchical')
+    }
+}
+
+
+highest_key = function(map, keys){
+
+    # Find the "highest" key in a tree-structured map
+    # Example:
+    # anno = load_anno(key='name', value='ident')
+    # keys = c('Tuft', 'Secretory', 'Epithelial')
+    # highest_key(keys) = 'Epithelial'
+
+    # Test data structure
+    keys = as.character(keys)
+    test = any(sapply(map[keys], function(a) sapply(map[keys], function(b) all(b %in% a))))
+    
+    # Return highest group
+    if(test == TRUE){
+        names(which.max(sapply(map[keys], length)))
+    } else {
+        stop('map not hierarchical')
     }
 }
 

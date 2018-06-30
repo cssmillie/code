@@ -2,8 +2,8 @@ require(data.table)
 source('~/code/single_cell/tpm.r')
 
 
-fast_gsea = function(ranks, pathways=NULL, regex='BP|MF|CC|hallmark|canonical', minSize=5, maxSize=500, nperm=1000, gseaParam=1){
-
+fast_gsea = function(ranks, pathways=NULL, bg=NULL, do.bg=FALSE, regex='BP|MF|CC|hallmark|canonical', minSize=5, maxSize=500, nperm=1000, gseaParam=1){
+    
     require(fgsea)
     hpath = '~/aviv/db/gsea/human.gsea_pathways.rds'
     mpath = '~/aviv/db/gsea/mouse.gsea_pathways.rds'
@@ -11,6 +11,7 @@ fast_gsea = function(ranks, pathways=NULL, regex='BP|MF|CC|hallmark|canonical', 
     # inputs:
     # ranks = list(gene1 = pval, gene2 = pval)
     # pathways = list(db1 = list(sig1 = genes, sig2 = genes, ...), db2 = list(sig1 = genes, sig2 = genes, ...))
+    # bg = background set of genes (remove these from ranks and pathways)
     
     # notes:
     # this function should be run on ranks from full gene universe, e.g.
@@ -24,12 +25,29 @@ fast_gsea = function(ranks, pathways=NULL, regex='BP|MF|CC|hallmark|canonical', 
     }
     
     # load default pathways
-    if(!is.list(pathways)){
+    if(is.null(pathways)){
         org = predict_organism(names(ranks)[1:min(length(ranks), 10)])
-	if(org == 'human'){pathways = readRDS(hpath)} else {pathways = readRDS(mpath)}
+	if(org == 'human'){pathways = readRDS(hpath)} else {pathways = readRDS(mpath)}	
+    } else if(!is.list(pathways)){
+        if(length(pathways) == 1){
+	    if(pathways == 'kegg'){
+	        pathways = list(KEGG=load_kegg(do.flatten=T))
+		regex = ''
+	    }
+	} else {
+	    pathways = list(Pathway=pathways)
+	}
     }
     pathways = pathways[grep(regex, names(pathways))]
     print(names(pathways))
+    
+    # filter background set
+    if(is.null(bg)){bg = names(ranks)}
+    bg = intersect(bg, names(ranks))
+    if(do.bg == TRUE){
+        ranks = ranks[bg]
+	pathways = lapply(pathways, function(a) lapply(a, function(b) intersect(bg, b)))
+    }
     
     gsea = list()
 
@@ -41,9 +59,6 @@ fast_gsea = function(ranks, pathways=NULL, regex='BP|MF|CC|hallmark|canonical', 
 	sizes = sapply(pathway, length)
 	pathway = pathway[minSize <= sizes & sizes <= maxSize]
 	print(paste(name, 'testing', length(pathway), 'gene sets'))
-	
-	# do not modify gene universe
-	# pathway = sapply(pathway, function(a) intersect(a, names(ranks)))
 	
 	# run gsea and sort by NES
         res = fgsea(pathways=pathway, stats=ranks, nperm=nperm, minSize=minSize, maxSize=maxSize, gseaParam=gseaParam)
