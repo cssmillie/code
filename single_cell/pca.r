@@ -101,7 +101,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
     cat(sprintf("Running initial PCA\n"))
     if(randomized){
         require(rsvd)
-        uu <- rsvd(as.matrix(dat), k=max.pc)
+        uu <- rsvd::rsvd(as.matrix(dat), k=max.pc)
     }else{
         uu <- corpcor::fast.svd(dat, tol = 0)
     }
@@ -118,7 +118,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
             dat0 <- t(apply(dat, 1, sample, replace = FALSE))
             if(randomized){
                 require(rsvd)
-                uu0 <- rsvd(as.matrix(dat0), k=max.pc)
+                uu0 <- rsvd::rsvd(as.matrix(dat0), k=max.pc)
             }else{
                 uu0 <- corpcor::fast.svd(dat0, tol = 0)
             }

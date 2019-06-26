@@ -401,7 +401,7 @@ pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes
 }
 
 
-gsea.fisher = function(gene_set1, gene_set2, reference='~/aviv/db/map_gene/hg19_genes.txt', n.cores=1){
+gsea.fisher = function(gene_set1, gene_set2, universe='~/aviv/db/map_gene/hg19_genes.txt', n.cores=1){
 
     # GSEA with fisher test
     # gene_set1 = list of genes
@@ -412,18 +412,28 @@ gsea.fisher = function(gene_set1, gene_set2, reference='~/aviv/db/map_gene/hg19_
     if(typeof(gene_set1) != 'list'){gene_set1 = list(gene_set1)}
     if(typeof(gene_set2) != 'list'){gene_set2 = list(gene_set2)}
     
+    # fix names
+    if(is.null(names(gene_set1))){names(gene_set1) = paste0('query_', 1:length(gene_set1))}
+    if(is.null(names(gene_set2))){names(gene_set2) = paste0('target_', 1:length(gene_set2))}
+    
     # pairwise fisher tests
-    all_genes = readLines(reference)
+    if(length(universe) == 1){all_genes = readLines(universe)} else {all_genes = universe}
     m = run_parallel(
-        foreach(i=gene_set1, .combine=rbind) %:% foreach(j=gene_set2, .combine=c) %dopar% {
-	    u = factor(all_genes %in% unlist(i), levels=c(FALSE, TRUE))
-	    v = factor(all_genes %in% unlist(j), levels=c(FALSE, TRUE))
-	    fisher.test(table(u,v))$p.value
+        foreach(i=names(gene_set1), .combine=rbind) %:% foreach(j=names(gene_set2), .combine=rbind) %dopar% {
+	    gi = gene_set1[[i]]
+	    gj = gene_set2[[j]]
+	    u = factor(all_genes %in% unlist(gi), levels=c(FALSE, TRUE))
+	    v = factor(all_genes %in% unlist(gj), levels=c(FALSE, TRUE))
+	    q = fisher.test(table(u,v))
+	    o = intersect(gi, gj)
+	    d = data.frame(query=i, target=j, pval=q$p.value, odds_ratio=q$estimate, overlap=paste(o, collapse=','))
+	    d
 	},
 	n.cores=n.cores
     )
-    rownames(m) = names(gene_set1)
-    colnames(m) = names(gene_set2)
+    m = as.data.table(m)
+    m[, padj := p.adjust(pval, 'fdr')]
+    m = m[order(pval)]
     return(m)
 }
 
@@ -545,12 +555,13 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
     return(go_terms)
 }
 
-load_kegg = function(names.use=NULL, names.rmv=NULL, do.flatten=FALSE, no_spaces=FALSE){
+load_kegg = function(names.use=NULL, names.rmv=NULL, do.flatten=FALSE, no_spaces=FALSE, regex=NULL){
     kegg = readRDS('/ahg/regevdata/projects/Gut_Human/analysis_0417/home/db/kegg/3.kegg.human.rds')
-    
+
     kegg = sapply(names(kegg), function(A)
                sapply(names(kegg[[A]]), function(B)
 	           sapply(names(kegg[[A]][[B]]), function(C) {
+		       if(!is.null(regex)){if((! grepl(regex, A) & ! grepl(regex, B)) & ! grepl(regex, C)){return(NULL)}}
 		       if(!is.null(names.use)){if(!(A %in% names.use | B %in% names.use | C %in% names.use)){return(NULL)}}
 		       if(!is.null(names.rmv)){if(A %in% names.rmv | B %in% names.rmv | C %in% names.rmv){return(NULL)}}
 		       as.character(na.omit(kegg[[A]][[B]][[C]]))

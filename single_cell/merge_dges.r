@@ -26,7 +26,7 @@ require(optparse)
 option_list = list(make_option('--name', help='prefix added to cell names', default=NULL),
                    make_option('--path', help='sparse matrix path', default=NULL),
 		   make_option('--pattern', help='regex pattern for cells to keep', default='.*'),
-	           make_option('--map', help='input mapping file (1=prefix, 2=path, 3=pattern)', default=NULL),
+	           make_option('--map', help='input mapping file (1=prefix, 2=path, 3=pattern)', default='Epi.map.txt'),
 		   make_option('--minc', help='cells per gene cutoff', type='integer', default=1),
                    make_option('--ming', help='genes per cell cutoff', type='integer', default=1),
                    make_option('--out', help='output file'),
@@ -61,14 +61,14 @@ map$name[is.na(map$name)] = ''
 
 
 # Read DGE (sparse or text)
-read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE){
+read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE, fix_duplicates=TRUE){
     
     # Read sparse or text matrix
     if(file.exists(path) & !dir.exists(path)){
         counts = ffread(path, row.names=TRUE)
 	counts = as(as.matrix(counts), 'sparseMatrix')
     } else {
-        counts = read_mtx(prefix=path, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=TRUE)
+        counts = read_mtx(prefix=path, data='matrix.mtx.gz', rows='features.tsv.gz', cols='barcodes.tsv.gz', filter=TRUE, fix_duplicates=FALSE)
     }
     
     # Fix formatting
@@ -86,9 +86,23 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, rename=FALSE)
     cells.use = grepl(pattern, colnames(counts)) & (colSums(counts > 0) >= ming)
     counts = counts[genes.use, cells.use]
     print(dim(counts))
+
+    # Fix duplicate genes
+    if(fix_duplicates == TRUE){
+        print('Fixing duplicates')
+        j = which(duplicated(rownames(counts)))
+	if(length(j) > 0){
+	    counts = as.matrix(counts)
+    	    i = match(rownames(counts)[j], rownames(counts))
+	    counts[i,] = counts[i,] + counts[j,]
+    	    counts = counts[setdiff(1:nrow(counts), j),]
+	    counts = as(counts, 'sparseMatrix')
+	}
+    }
     
     # Print and return
     cat(paste0('\nRead ', path, ' [', nrow(counts), ' x ', ncol(counts), ']\n'))
+    if(args$sparse == TRUE){counts = as(counts, 'sparseMatrix')}
     return(counts)
 }
 
@@ -98,7 +112,9 @@ for(i in 1:nrow(map)){
     path = map[i,2]
     pattern = map[i,3]
     dge = read_dge(path, prefix=name, pattern=pattern, ming=args$ming, minc=args$minc, rename=args$rename)
+    print(typeof(dge))
     if(!is.null(dim(dge))){dges = c(dges, dge)}
+    print(object.size(dges))
 }
 
 
@@ -106,15 +122,15 @@ for(i in 1:nrow(map)){
 # Merge matrices
 # --------------
 
-cat('\nInitializing DGE\n')
+cat('\nMerging DGEs\n')
 x = sparse_cbind(dges)
 
+
+cat('\nFixing replicates\n')
 # Check for replicate cell barcodes
 if(max(table(colnames(x))) > 1){
     cat(paste('\nMerging', ncol(x) - length(unique(colnames(x))), 'replicate cell barcodes'))
-    print(mean(colSums(x[,grep('ColFr0_Mye_3', colnames(x))])))
     x = as(t(rowsum(t(as.matrix(x)), colnames(x))), 'sparseMatrix')
-    print(mean(colSums(x[,grep('ColFr0_Mye_3', colnames(x))])))
 }
 
 
@@ -126,6 +142,7 @@ if(max(table(colnames(x))) > 1){
 rm(dges)
 
 # Filter data
+print('Filtering data')
 genes.use = rowSums(x > 0) >= args$minc
 cells.use = colSums(x > 0) >= args$ming
 x = x[genes.use, cells.use]
@@ -133,7 +150,7 @@ cat(paste0('\nWriting DGE [', nrow(x), ' x ', ncol(x), ']\n'))
 
 # Write to file
 if(args$sparse == TRUE){    
-    write_mtx(x, prefix=args$out, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv')
+    write_mtx(x, prefix=args$out, data='matrix.mtx', rows='features.tsv', cols='barcodes.tsv')
 } else {
     cat('\nWriting dense matrix\n')
     require(tibble)

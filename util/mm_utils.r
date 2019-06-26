@@ -43,7 +43,6 @@ mm_logical_not = function(mm, form, data, method='auto', invert='last'){
     
     # map factors to variables
     vars = mm_reverse(mm, form, data)
-    print(apply(mm, 2, table))
     
     # for each model matrix column...
     mm.cols = grep('Intercept', colnames(mm), invert=T, value=T)

@@ -1,5 +1,42 @@
 
 
+mem_cbind = function(M){
+    require(Matrix)
+    
+    # Initialize matrix
+    x = M[[1]]
+    
+    # Fast merge
+    for(i in 2:length(M)){
+        m = M[[i]]
+	
+	# Add rows to x
+	r = setdiff(rownames(m), rownames(x))
+	if(length(r) > 0){
+	    n = Matrix(0, nrow=length(r), ncol=ncol(x), sparse=T)
+	    rownames(n) = r
+	    x = rbind(x, n)
+	}
+	
+	# Add rows to m
+	r = setdiff(rownames(x), rownames(m))
+	if(length(r) > 0){
+	    n = Matrix(0, nrow=length(r), ncol=ncol(m), sparse=T)
+	    rownames(n) = r
+	    m = rbind(m, n)
+	}
+	
+	# Align rows
+	m = m[rownames(x),,drop=F]
+	
+	# Combine data
+	x = cbind(x, m)
+    }
+    
+    x
+}
+
+
 sparse_cbind = function(M){
     require(Matrix)
     
@@ -12,9 +49,11 @@ sparse_cbind = function(M){
     for(m in M){
         
         # Align rows
-	n = Matrix(0, nrow=length(rows)-nrow(m), ncol=ncol(m), sparse=T)
-	rownames(n) = setdiff(rows, rownames(m))
-	m = rbind(m, n)
+	if(length(rows) - nrow(m) > 0){
+	    n = Matrix(0, nrow=length(rows)-nrow(m), ncol=ncol(m), sparse=T)
+	    rownames(n) = setdiff(rows, rownames(m))
+	    m = rbind(m, n)
+	}
 	m = m[rows,,drop=F]
 	
 	# Combine data
@@ -88,7 +127,7 @@ mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barc
 }
 
 
-read_mtx = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv', fix_duplicates=FALSE){
+read_mtx = function(prefix, data='matrix.mtx', rows='features.tsv', cols='barcodes.tsv', filter=FALSE, fix_duplicates=FALSE){
 
     # Get filenames
     fns = mtx_filenames(prefix=prefix, data=data, rows=rows, cols=cols)
@@ -97,14 +136,21 @@ read_mtx = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.
     cols = fns$cols
     
     # Read data
+    print(paste('Reading', data))
     data = readMM(data)
-    rows = read.table(rows)
+    rows = read.table(rows, sep='\t')
+    # Fix 10X's new file format
+    rows = rows[,sapply(rows, function(a) ! all(a == 'Gene Expression')),drop=F]
     rows = rows[,ncol(rows)]
     cols = read.table(cols)
     cols = cols[,ncol(cols)]
+    print(dim(data))
+    
+    # Filter matrix
+    if(filter == TRUE){print('read_mtx: filtering'); j = colSums(data > 0) >= 10; data = data[,j]; cols=cols[j]}
     
     # Set names
-    if(fix_duplicates == TRUE){data = as(rowsum(as.matrix(data), rows), 'sparseMatrix')} else {rownames(data) = rows}
+    if(fix_duplicates == TRUE){print('read_mtx: fixing duplicate rownames'); data = as(rowsum(as.matrix(data), rows), 'sparseMatrix')} else {rownames(data) = rows}
     colnames(data) = cols
     
     return(data)

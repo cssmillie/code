@@ -93,3 +93,45 @@ map_gene = function(genes, target='human', source='auto', do.unlist=TRUE){
     }
 
 }
+
+
+get_functions = function(genes, type='desc', org='auto'){
+    library(rentrez)
+    library(biomaRt)
+    res = setNames(rep('', length(genes)), genes)
+    if(org == 'auto'){
+        org = predict_organism(genes)
+    }
+    if(type == 'desc'){
+        if(org == 'human'){
+            hmart = useMart(biomart="ensembl", dataset="hsapiens_gene_ensembl")
+	    anno = getBM(attributes=c('hgnc_symbol', 'description'), mart=hmart)
+    	} else if(org == 'mouse'){
+            mmart = useMart(biomart="ensembl", dataset="mmusculus_gene_ensembl")
+	    anno = getBM(attributes=c('mgi_symbol', 'description'), mart=mmart)
+    	} else {
+            stop('unknown organism')
+    	}
+    	anno = anno[anno[,1] != '',]
+    	anno = anno[!duplicated(anno[,1]),]
+    	anno = data.frame(anno, row.names=1)
+    	anno[,1] = gsub('\\[.*\\]$', '', anno[,1])
+	i = intersect(rownames(anno), genes)
+	res[i] = anno[i,1]
+    }
+    if(type == 'summary'){
+        library(mygene)
+        if(org == 'human'){
+	    library(org.Hs.eg.db)
+	    entrez = mapIds(org.Hs.eg.db, genes, 'ENTREZID', 'SYMBOL')
+	    res[] = unlist(getGenes(entrez, fields='summary')$summary)
+	} else if(org == 'mouse'){
+	    library(org.Mm.eg.db)
+	    entrez = mapIds(org.Mm.eg.db, genes, 'ENTREZID', 'SYMBOL')
+	    res[] = unlist(getGenes(entrez, fields='summary')$summary)
+	} else {
+	    stop('unknown organism')
+	}
+    }
+    return(res)
+}

@@ -5,14 +5,49 @@ source('~/code/single_cell/parallel.r')
 
 cosine_dist = function(x){as.dist(1 - crossprod(x)/crossprod(t(matrix(sqrt(colSums(x**2))))))}
 
-run_graph_cluster = function(data, k=100,  method='infomap', weighted=FALSE, dist='cosine', do.fast=FALSE, out=NULL, knn=NULL){
+cross_nng = function(x, groups, k=10){
+    library(FNN)
+    groups = as.factor(groups)
+    
+    # Calculate "cross" nearest neighbor graph
+    dx = lapply(levels(groups), function(g1){print(g1)
+  	i = which(groups == g1)
+        u = lapply(levels(groups), function(g2){
+	    j = which(groups == g2)
+	    dx = get.knnx(data=x[j,], query=x[i,], k=k)$nn.index
+	    dx = apply(dx, 2, function(a) j[a])
+	    dx
+	})
+	u = do.call(cbind, u)
+        rownames(u) = rownames(x)[i]
+	u
+    })
+    dx = do.call(rbind, dx)
+    dx = dx[rownames(x),]
+    
+    # This code is from the "nng" function
+    edges = matrix(unlist(sapply(1:nrow(x), function(i) {
+        rbind(rep(i, k), dx[i, ])
+    })), nrow = 2)
+    n =  nrow(x)
+    graph(edges, n = n, directed = TRUE)
+}
 
+run_graph_cluster = function(data, k=100, groups=NULL, method='infomap', weighted=FALSE, dist='cosine', do.fast=FALSE, out=NULL, knn=NULL){
+    
     # Graph cluster rows of data
     require(cccd)
-
+    
     if(is.null(knn)){
+        
         print('Building kNN graph')
-        knn = nng(data, k=k, method=dist, use.fnn=do.fast)
+	if(is.null(groups)){
+            knn = nng(data, k=k, method=dist, use.fnn=do.fast)
+	} else {
+	    new_k = as.integer(k/length(unique(groups)))
+	    print(paste0('Calculating cross-kNN with ', length(unique(groups)), ' groups and k =', new_k))
+	    knn = cross_nng(data, groups=groups, k=k)
+	}
         if(weighted == TRUE){    
         
 	    print('Calculating Jaccard similarity')
@@ -27,7 +62,7 @@ run_graph_cluster = function(data, k=100,  method='infomap', weighted=FALSE, dis
         print('Louvain clustering')
         m = cluster_louvain(as.undirected(knn))
     }
-
+    
     if(method == 'infomap'){
         print('Infomap clustering')
         m = cluster_infomap(knn)
@@ -101,7 +136,7 @@ run_density = function(data, dist='cosine'){
     return(clusters)
 }
 
-run_cluster = function(data, k, method='infomap', weighted=FALSE, n.cores=1, dist='cosine', do.fast=TRUE, prefix=NULL, knn=NULL){
+run_cluster = function(data, k, groups=NULL, method='infomap', weighted=FALSE, n.cores=1, dist='cosine', do.fast=TRUE, prefix=NULL, knn=NULL){
 
     # Cluster rows of data
     
@@ -117,7 +152,7 @@ run_cluster = function(data, k, method='infomap', weighted=FALSE, n.cores=1, dis
 	    
 	    # Get clusters
 	    if(method %in% c('infomap', 'louvain')){
-            	gi = run_graph_cluster(data, k=i, method=method, weighted=weighted, dist=dist, do.fast=do.fast, out=out, knn=knn)
+            	gi = run_graph_cluster(data, k=i, groups=groups, method=method, weighted=weighted, dist=dist, do.fast=do.fast, out=out, knn=knn)
 	    }
 	    if(method == 'phenograph'){
 	        gi = run_phenograph(data, k=i, dist=dist, out=out)

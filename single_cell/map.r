@@ -115,7 +115,12 @@ highest_key = function(map, keys){
 }
 
 
-load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', value='name', fix=c('desc', 'description', 'final')){
+load_anno = function(type='gut', fn=NULL, key='ident', value='name', fix=c('desc', 'description', 'final')){
+
+    # Get filename
+    if(is.null(fn)){
+	if(type == 'gut'){fn = '~/Gut_Human/current/anno/all.anno.txt'} else {fn = '~/ens/analysis/1.atlas/current/anno/neur.anno.txt'}
+    }
     
     # Load annotation map
     x = load_map(fn, key, value)
@@ -126,6 +131,7 @@ load_anno = function(fn='~/Gut_Human/current/anno/all.anno.txt', key='ident', va
 	a = gsub('_', ' ', a)
 	a
     }
+    x = sapply(x, function(a) gsub('^ ', '', a), simplify=F)
     
     if(key %in% fix){
         names(x) = fix_text(names(x))

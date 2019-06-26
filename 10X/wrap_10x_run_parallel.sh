@@ -5,8 +5,9 @@
 #$ -l h_vmem=4g
 #$ -e run.error
 #$ -o run.log
-#$ -l h_rt=24:00:00
+#$ -l h_rt=30:00:00
 #$ -t 1-NUM
+#$ -l os=RedHat7
 
 source /broad/software/scripts/useuse
 reuse UGER
@@ -23,12 +24,18 @@ cellranger count --id=${channel_id} \
 	   --fastqs=FASTQ_PATH \
 	   --jobmode=/home/unix/csmillie/code/10X/sge.template \
 	   --mempercore=8 \
-	   --nosecondary
+	   --nosecondary \
+	   --force-cells=6000
 "
 
 # Add lanes
 if [[ $channel_lane  != '*' ]]; then
-    command="${command} --lanes=${channel_lane}"
+    # Get comma-separated lanes
+    lane1=$(echo "$channel_lane" | cut -d$'-' -f 1)
+    lane2=$(echo "$channel_lane" | cut -d$'-' -f 2)
+    lanes=$(seq -s, $lane1 $lane2)
+    #command="${command} --lanes=${channel_lane}"
+    command="${command} --lanes=${lanes}"
 fi
 
 # If demultiplexed with --demux, add indices

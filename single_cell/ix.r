@@ -31,7 +31,7 @@ smart_shuffle = function(data, cols.shuf, cols.test=NULL, max_tries=10, max_iter
     as.data.table(data)
 }
 
-make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE){
+make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE, full_complex=FALSE){
     require(data.table)
     
     # Build cell-cell interaction network from markers and gene pairs
@@ -72,14 +72,24 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE
     }
     ix = as.data.table(sapply(ix, as.character))
     colnames(ix) = c('lig', 'rec')
+    ix$lig = strsplit(ix$lig, ',')
+    ix$rec = strsplit(ix$rec, ',')
     
-    # Intersect genes
-    if(is.null(diff)){
-        ix = ix[lig %in% data$gene & rec %in% data$gene]
-    } else {
-        ix = ix[(lig %in% data$gene & rec %in% diff$gene) | (rec %in% data$gene & lig %in% diff$gene)]
+    if(full_complex == FALSE){
+        ix = as.data.table(unique(do.call(rbind, apply(ix, 1, function(a) expand.grid(a[[1]], a[[2]])))))
+    	ix = as.data.table(sapply(ix, as.character))
+        colnames(ix) = c('lig', 'rec')
     }
-    genes.use = sort(unique(c(ix$lig, ix$rec)))
+    
+    if(is.null(diff)){
+        i = apply(ix, 1, function(a) any(a[[1]] %in% data$gene) & any(a[[2]] %in% data$gene))
+        ix = ix[i]
+    } else {
+        i = apply(ix, 1, function(a) any(a[[1]] %in% data$gene) & any(a[[2]] %in% diff$gene))
+	j = apply(ix, 1, function(a) any(a[[1]] %in% diff$gene) & any(a[[2]] %in% data$gene))
+	ix = ix[i | j]
+    }
+    genes.use = sort(unique(c(unlist(ix$lig), unlist(ix$rec))))
     data = data[gene %in% genes.use]
     
     # Initialize network
@@ -99,17 +109,17 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE
 	
 	# Baseline edges
 	n.edges = c()
-	n.l = data[gene == l & ct == TRUE, ident]
-	n.r = data[gene == r & ct == TRUE, ident]
+	n.l = data[ct == TRUE][, all(l %in% gene), ident][V1 == TRUE, ident]
+	n.r = data[ct == TRUE][, all(r %in% gene), ident][V1 == TRUE, ident]
 	if(length(n.l) > 0 & length(n.r) > 0){
 	    n.edges = as.matrix(expand.grid(n.l, n.r))
 	}
 	
 	# DE edges
 	d.edges = c()
-	d.l = data[gene == l & de == TRUE, ident]
+	d.l = data[de == TRUE][, all(l %in% gene), ident][V1 == TRUE, ident]
 	D.l = unique(c(n.l, d.l))
-	d.r = data[gene == r & de == TRUE, ident]
+	d.r = data[de == TRUE][, all(r %in% gene), ident][V1 == TRUE, ident]
 	D.r = unique(c(n.r, d.r))
 	
 	if(length(d.l) > 0 & length(D.r) > 0){
@@ -122,12 +132,12 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE
 	
 	# Fix names
 	if(!is.null(nrow(n.edges))){if(nrow(n.edges) > 0){
-	    n.edges = cbind(n.edges, l, r)
+	    n.edges = cbind(n.edges, paste(l, collapse=','), paste(r, collapse=','))
 	    colnames(n.edges) = c('lcell', 'rcell', 'lig', 'rec')
 	    n$edges = rbind(n$edges, n.edges)
 	}}
 	if(!is.null(nrow(d.edges))){if(nrow(d.edges) > 0){
-	    d.edges = cbind(d.edges, l, r)
+	    d.edges = cbind(d.edges, paste(l, collapse=','), paste(r, collapse=','))
 	    colnames(d.edges) = c('lcell', 'rcell', 'lig', 'rec')
 	    d$edges = rbind(d$edges, d.edges)
 	}}

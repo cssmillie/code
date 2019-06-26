@@ -14,6 +14,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', default=8, help='memory (gb)')
     parser.add_argument('-t', default=7200, help='time (sec)')
+    parser.add_argument('-O', default='RedHat7', help='OS (RedHat6, RedHat7)')
     parser.add_argument('-o', default='run', help='output prefix', required=True)
     parser.add_argument('-P', default='regevlab', help='project name')
     parser.add_argument('-H', default='', help='header lines')
@@ -154,6 +155,7 @@ class Submitter():
         self.m = args.m # memory
         self.t = args.t # time
         self.o = args.o # output
+        self.O = args.O # OS (RedHat6, RedHat7)
         self.P = args.P # project
         self.H = args.H # header
         self.u = args.u # user
@@ -224,7 +226,7 @@ class Submitter():
         task_ids = ','.join(map(str, sorted([task.task_id for task in tasks])))        
         
         # submit job
-        cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, task_ids, self.P, array)
+        cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -l os=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, self.O, task_ids, self.P, array)
         print(cmd)
         # hackish
         if self.x:

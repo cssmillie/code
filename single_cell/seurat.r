@@ -19,6 +19,7 @@ source('~/code/single_cell/specific.r')
 source('~/code/single_cell/tsne.r')
 source('~/code/single_cell/var_genes.r')
 source('~/code/util/mtx.r')
+source('~/code/FIt-SNE/fast_tsne.R')
 
 msg = function(name, text, verbose){
     if(verbose == TRUE){
@@ -75,8 +76,9 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
     msg(name, sprintf('DGE = %d x %d', nrow(counts), ncol(counts)), verbose)
     
     # Convert counts to sparse matrix
-    counts = as(as.matrix(counts), 'sparseMatrix')
-        
+    if(is.data.frame(counts)){counts = as.matrix(counts)}
+    counts = as(counts, 'sparseMatrix')
+            
     # Get cell identities
     if(is.null(ident_fxn)){
         ident = sapply(strsplit(colnames(counts), '\\.'), '[', 1)
@@ -105,10 +107,11 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
     msg(name, 'Making Seurat object', verbose)
     seur = new('seurat', raw.data=counts)
     seur = Setup(seur, project=name, min.cells=0, min.genes=0, total.expr=1e4, names.delim='\\.', names.field=1, do.center=F, do.scale=F, do.logNormalize=F)
-    
+        
     # Normalize data (default = TPM)
     if(qnorm == FALSE){
-        seur@data = as(log2(1e4*scale(seur@raw.data, center=F, scale=colSums(seur@raw.data)) + 1), 'sparseMatrix')
+        seur@data = calc_tpm(counts=seur@raw.data)
+	seur@data@x = log2(seur@data@x + 1)
     } else {
         library(preprocessCore)
 	seur@data = as(log2(normalize.quantiles.robust(as.matrix(seur@raw.data)) + 1), 'sparseMatrix')
@@ -133,13 +136,15 @@ make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=1e6, m
 }
 
 
-run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=500, maxg=1e6, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
-             min_cv2=.25, var_genes=NULL, qnorm=F,
-	     num_genes=1500, do.batch='none', batch.use=NULL, design=NULL, pc.data=NULL, num_pcs=0, robust_pca=F, perplexity=25, max_iter=1000, dist.use='cosine', do.largevis=FALSE, largevis.k=50,
+run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=200, maxg=1e6, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
+             min_cv2=.25, var_genes=NULL, qnorm=F, num_genes=1500, do.batch='none', batch.use=NULL,
+	     design=NULL, pc.data=NULL, num_pcs=0, pcs.use=NULL, pcs.rmv=NULL, robust_pca=F,
+	     perplexity=25, max_iter=1000, dist.use='euclidean', do.largevis=FALSE, do.umap=FALSE, largevis.k=50, do.fitsne=FALSE, fitsne.K=-1,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
 
     # check input arguments
-    if(! do.batch %in% c('none', 'combat', 'mnn', 'cca')){stop('do.batch must be none, combat, mnn, or cca')}
+    if(! do.batch %in% c('none', 'combat', 'mnn', 'cca', 'multicca', 'liger')){stop('do.batch must be none, combat, mnn, or cca')}
+    if(! is.null(batch.use)){if(is.null(names(batch.use))){stop('batch.use needs names')}}
     
     # Make Seurat object
     if(is.null(seur)){
@@ -155,19 +160,23 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     seur@var.genes = intersect(var_genes, rownames(seur@data))
     print(var_genes)
     
-    # Batch correction
+    # Batch correction with variable genes
     if(do.batch != 'none'){
 	msg(name, 'Batch correction', verbose)
 	if(is.null(batch.use)){
 	    batch.use = seur@ident
-	} else {
-	    batch.use = batch.use[names(seur@ident),1]
 	}
+	batch.use = batch.use[names(seur@ident)]
+	print(table(batch.use))
 	if(!is.null(design)){
 	    design = design[names(seur@ident),,drop=F]
 	}
-	bc.data = batch_correct(seur, batch.use, design=design, method=do.batch, genes.use='var')
-	pc.data = t(scale(t(bc.data)))
+	bc.data = batch_correct(seur, batch.use, design=design, method=do.batch, genes.use=seur@var.genes, ndim=num_pcs)
+	
+	# write batch corrected data to file
+	if(write_out == TRUE){fwrite(as.data.table(bc.data), file=paste0(name, '.bc.data.txt'), sep='\t')}
+	
+	pc.data = t(scale(t(bc.data), center=F))
     }
     if(is.null(pc.data)){pc.data = seur@data}
     
@@ -178,40 +187,57 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
     if(is.na(num_pcs)){num_pcs = 5}
     seur@data.info$num_pcs = num_pcs
     msg(name, sprintf('Found %d significant PCs', num_pcs), verbose)
-
+    
     # Fast PCA on data
-    seur = run_rpca(seur, data=pc.data, k=50, genes.use=seur@var.genes, robust=robust_pca, rescale=T)
-    msg(name, 'PC loadings', verbose)
-    loaded_genes = get.loaded.genes(seur@pca.obj[[1]], components=1:num_pcs, n_genes=20)
-    print(loaded_genes)
-
+    if(do.batch %in% c('liger', 'multicca')){
+        seur@pca.rot = as.data.frame(pc.data) # liger and multi-cca output saved in pc.data
+	print(dim(seur@pca.rot))
+    } else {
+        seur = run_rpca(seur, data=pc.data, k=50, genes.use=seur@var.genes, robust=robust_pca, rescale=T)
+	if(write_out == TRUE){saveRDS(seur@pca.obj, file=paste0(name, '.pca.rds'))}    	
+        msg(name, 'PC loadings', verbose)
+        loaded_genes = get.loaded.genes(seur@pca.obj[[1]], components=1:num_pcs, n_genes=20)
+        print(loaded_genes)
+    }
+    
+    # Fix problem with duplicates
+    seur@pca.rot[,num_pcs] = seur@pca.rot[,num_pcs] + runif(nrow(seur@pca.rot), min=-1e-8, max=1e-8)
+    
+    # Regress out PCs
+    if(is.null(pcs.use)){
+        pcs.use = 1:(min(ncol(seur@pca.rot), num_pcs))
+    }
+    
     # TSNE
     knn = NULL
-    if(do.largevis == FALSE){
+    if(do.fitsne == TRUE){
+        msg(name, 'FIt-SNE', verbose)
+	q = fftRtsne(seur@pca.rot[,pcs.use], max_iter=max_iter, perplexity=perplexity, K=fitsne.K, fast_tsne_path='~/code/FIt-SNE/bin/fast_tsne')
+    } else if(do.largevis == TRUE){
+        msg(name, 'largeVis', verbose)
+	q = run_largevis(seur@pca.rot[,pcs.use], k=largevis.k, save_knn=TRUE, save_weights=FALSE, dist.use=dist.use, verbose=T)
+	knn = q$knn
+	q = q$coords
+    } else if(do.umap == TRUE){
+        msg(name, 'umap', verbose)
+	q = umap(seur@pca.rot[,pcs.use])
+    } else {
         msg(name, 'TSNE', verbose)
 	require(Rtsne)
         if(dist.use == 'euclidean'){
-            q = Rtsne(seur@pca.rot[,1:num_pcs], do.fast=T, max_iter=max_iter, perplexity=perplexity, verbose=T)$Y
+            q = Rtsne(seur@pca.rot[,pcs.use], do.fast=T, max_iter=max_iter, perplexity=perplexity, verbose=T)$Y
         } else if(dist.use == 'cosine'){
-            d = cosine_dist(t(seur@pca.rot[,1:num_pcs]))
+            d = cosine_dist(t(seur@pca.rot[,pcs.use]))
 	    q = Rtsne(d, is_distance=T, do.fast=T, max_iter=max_iter, perplexity=perplexity, verbose=T)$Y
         } else {
-            d = dist(seur@pca.rot[,1:num_pcs], method=dist.use)
+            d = dist(seur@pca.rot[,pcs.use], method=dist.use)
 	    q = Rtsne(d, is_distance=T, do.fast=T, max_iter=max_iter, perplexity=perplexity, verbose=T)$Y
         }
-    } else {
-        msg(name, 'largeVis', verbose)
-	q = run_largevis(seur@pca.rot[,1:num_pcs], k=largevis.k, save_knn=TRUE, save_weights=FALSE, dist.use=dist.use, verbose=T)
-	knn = q$knn
-	q = q$coords
     }
     rownames(q) = colnames(seur@data)
     colnames(q) = c('tSNE_1', 'tSNE_2')
     seur@tsne.rot = as.data.frame(q)
     
-    msg(name, 'Calculate signatures', verbose)
-    seur = update_signatures(seur)
-
     # Cluster cells and run DE tests
     if(length(k) > 0){
 
@@ -221,7 +247,7 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
 	msg(name, 'Clustering cells', verbose)
 	k = k[k < ncol(seur@data)]
 	u = paste('Cluster.Infomap.', k, sep='')
-	v = run_cluster(seur@pca.rot[,1:num_pcs], k, method=cluster, weighted=FALSE, n.cores=min(length(k), ncores), dist='cosine', do.fast=T, knn=knn)
+	v = run_cluster(seur@pca.rot[,pcs.use], k, method=cluster, weighted=FALSE, n.cores=min(length(k), ncores), dist='cosine', do.fast=T, knn=knn)
 	seur@data.info[,u] = v
 
 	if(marker.test != ''){
@@ -237,36 +263,25 @@ run_seurat = function(name, seur=NULL, dge=NULL, regex='', regexv='', cells.use=
 	}
     }
 
-    if(write_out){
-
-        # Batch corrected data
-	if(do.batch != 'none'){fwrite(as.data.table(bc.data), file=paste0(name, '.bc.dge.txt'), sep='\t')}
+    if(write_out){	
 	
-	# PCA loaded genes
-	write.table(loaded_genes, paste0(name, '.loaded_genes.txt'), sep='\t', quote=F)
-
 	# Plot TSNE
 	png(paste0(name, '.tsne.png'), width=800, height=650)
 	tsne.plot(seur, pt.size=1)
 	dev.off()
-
+	
 	# Plot clusters
 	if(length(k) > 0){
 	    pdf(paste0(name, '.clusters.pdf'), width=9, height=9)
 	    plot_clusters(seur)
 	    dev.off()
 	}
-
+	
 	# Marker genes
 	if(marker.test != ''){
 	    for(ki in names(markers)){write.table(markers[[ki]], file=paste0(name, '.k', ki, '.', marker.test, '.txt'), sep='\t', quote=F)}
 	}
-
-	# Plot summary statistics
-	png(paste0(name, '.summary_stats.png'), width=1200, height=800)
-	plot_tsne(seur, subset(seur@data.info, select=c(orig.ident, G1S, G2M, nGene)), do.label=F)
-	dev.off()
-
+	
 	# Save Seurat object
 	saveRDS(seur, file=paste0(name, '.seur.rds'))
     }
@@ -282,20 +297,42 @@ safeRDS = function(object, file){
 }
 
 
-merge_seurat = function(seur1, seur2, rm_old=FALSE){
+merge_seurat = function(seur1, seur2, rm_old=FALSE, mem=FALSE){
     
-    # Merge objects
-    seur = MergeSeurat(seur1, seur2, do.scale=F, do.center=F, do.logNormalize=F)
+    # Calculate idents
+    ident = setNames(c(as.character(seur1@ident), as.character(seur2@ident)), c(colnames(seur1@data), colnames(seur2@data)))
+    ident = factor(ident, levels=c(levels(seur1@ident), levels(seur2@ident)))
     
-    # Fix idents
-    ident = c(seur1@ident, seur2@ident)[colnames(seur@data)]
-    seur = SetIdent(seur, ident.use=ident)
-
-    # Remove old seurat objects (save memory)
-    if(rm_old == TRUE){rm(seur1); rm(seur2)}
+    if(mem == FALSE){
+        
+        # Merge objects
+    	seur = MergeSeurat(seur1, seur2, do.scale=F, do.center=F, do.logNormalize=F)
+    	
+    	# Remove old seurat objects (save memory)
+    	if(rm_old == TRUE){rm(seur1); rm(seur2)}
+    	
+    	# Calculate log2(TPM + 1)
+    	seur@data = log2(calc_tpm(seur=seur) + 1)
+    	seur@ident = ident[colnames(seur@data)]
     
-    # Calculate log2(TPM + 1)
-    seur@data = log2(calc_tpm(seur=seur) + 1)
+    } else {
+        
+	# Make counts matrix
+	print('Merge counts')
+	#counts = sparse_cbind(list(seur1@raw.data, seur2@raw.data))
+	counts = mem_cbind(list(seur1@raw.data, seur2@raw.data))
+	
+	# Remove old seurat objects (save memory)
+	if(rm_old == TRUE){rm(seur1); rm(seur2)}
+	
+	# Make Seurat object
+	seur = new('seurat', raw.data=counts)
+	print('Calculate TPM')
+        seur@data = calc_tpm(counts=seur@raw.data)
+	print('Log transform')
+        seur@data@x = log2(seur@data@x + 1)
+	seur@ident = ident[colnames(seur@data)]
+    }
     
     # Return merged object
     return(seur)
@@ -331,7 +368,9 @@ map_ident = function(seur, old_ident){
 
 fast_ident = function(seur, ident_map){
     ident_map = data.frame(stack(ident_map), row.names=1)
-    ident_map[,1] = make.unique(as.character(ident_map[,1]))
+    ident_map = ident_map[levels(seur@ident),,drop=F]
+    u = as.character(ident_map[,1])
+    ident_map[,1] = ave(u, u, FUN=function(x){if(length(x) > 1){paste(x, 1:length(x), sep='_')} else {x}})
     ident = seur@ident
     levels(ident) = ident_map[as.character(levels(ident)),1]
     return(ident)

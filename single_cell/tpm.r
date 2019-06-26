@@ -20,6 +20,7 @@ predict_log_base = function(x, n=10, bases.use=c(2, exp(1), 10), tol=1e-4){
     # Test for imputed TPM
     if(max(u) > 32 | max(v) > 32){
         print('predict_log_base: guessing data type = imputed TPM')
+	stop('no good')
         return('tpm')
     }
     
@@ -38,21 +39,25 @@ predict_log_base = function(x, n=10, bases.use=c(2, exp(1), 10), tol=1e-4){
 }
 
 
-calc_tpm = function(seur=NULL, data=NULL, genes.use=NULL, cells.use=NULL, total=1e4){
+calc_tpm = function(seur=NULL, counts=NULL, tpm=NULL, data=NULL, genes.use=NULL, cells.use=NULL, total=1e4){
     require(wordspace)
     
     # Calculate TPM from @raw.data or data argument
     
     # Get counts data for calculation
+    if(!is.null(counts)){data = counts}
+    if(!is.null(tpm)){data = counts}
     if(is.null(data)){data = seur@raw.data}
     if(is.null(genes.use)){genes.use = rownames(data)}
     if(is.null(cells.use)){cells.use = colnames(data)}
-    
+        
     # Intersect genes.use and cells.use
     genes.use = intersect(genes.use, rownames(data))
     cells.use = intersect(cells.use, colnames(data))
 
     # Predict log base
+    if(!is.null(counts)){base = 'counts'}
+    if(!is.null(tpm)){base = 'tpm'}
     base = predict_log_base(data[, sample(1:ncol(data), 2)])
     
     if(base == 'counts'){

@@ -26,6 +26,14 @@ http://kcoserver.broadinstitute.org:8088/
 - Trimmomatic = FALSE, Star = TRUE, RNASeq-QC = TRUE, RSEM=TRUE
 - path to output: /home/unix/csmillie/ens/data/0717_navin2_brain_colon
 
+OR
+
+for intron reference, copy this file to your data directory
+/ahg/regevdata/projects/ens/data2/plate/run/my_runner_script.sh
+
+qsub it
+it will work as long as you have a samples.txt file
+
 5. Run scripts
 
 

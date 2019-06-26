@@ -1,5 +1,5 @@
 
-run_largevis = function(data, k, save_knn=FALSE, save_weights=FALSE, dist.use='euclidean', verbose=TRUE, max_iter=1){
+run_largevis = function(data, k, save_knn=FALSE, save_weights=FALSE, dist.use='euclidean', verbose=TRUE, max_iter=1, perplexity=max(50, k/3)){
     require(igraph)
     require(largeVis)
 
@@ -11,7 +11,7 @@ run_largevis = function(data, k, save_knn=FALSE, save_weights=FALSE, dist.use='e
     dist.use = paste(toupper(substr(dist.use, 1, 1)), substr(dist.use, 2, nchar(dist.use)), sep="")
 
     # run largevis
-    res = largeVis(data, K=k, save_neighbors=save_knn, save_edges=save_weights, distance_method=dist.use, verbose=verbose, max_iter=max_iter)
+    res = largeVis(data, K=k, save_neighbors=save_knn, save_edges=save_weights, distance_method=dist.use, verbose=verbose, max_iter=max_iter, perplexity=perplexity)
 
     # construct output object
     out = list(coords=t(res$coords))

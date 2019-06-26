@@ -17,8 +17,6 @@
 #
 # 3. Change filename of sge.template.example to sge.template.
 #
-# *** NOTE: removed os flag. to add, use this line: "#$ -l os=RedHat7"
-#
 # =============================================================================
 # Template
 # =============================================================================
@@ -35,8 +33,6 @@
 #$ -l h_rt=4:00:00
 #$ -R y
 #$ -S "/usr/bin/env bash"
-
-use .bcl2fastq2-2.20.0.422
-use .bcl2fastq2-v2.20.0
+#$ -l os=RedHat6
 
 __MRO_CMD__

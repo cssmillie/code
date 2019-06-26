@@ -1,7 +1,7 @@
 options(java.parameters = "-Xmx8g")
 library(xlsx)
 
-write_excel = function(data, out, max_rows=500, row.names=FALSE){
+write_excel = function(data, out, max_rows=1e5, row.names=FALSE){
 
     # Write list of data frames to Excel spreadsheet
     # data = input data (named list)

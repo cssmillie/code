@@ -1,4 +1,4 @@
-plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NULL, fit.cutoff=2, lab.name='Group', out=NULL){
+plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NULL, lab.n=NULL, fit.cutoff=2, lab.name='Group', out=NULL){
     
     require(ggplot2)
     require(ggrepel)
@@ -19,6 +19,12 @@ plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NU
     d[lab.use, 'Type'] = 'Label'
     d[lab.use, 'lab'] = lab.use
     
+    # select subset to label
+    if(!is.null(lab.n)){
+        lab.sub = sample(lab.fit, min(lab.n, length(lab.fit)))
+	d[(!d$lab %in% lab.use & !d$lab %in% lab.sub), 'lab'] = ''
+    }
+        
     # rug plot data
     d.rug = data.frame(x=l2[u1 == 0], y=l2[u1 == 0])
     
@@ -26,8 +32,8 @@ plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NU
     if(!is.null(out)){alpha=.25} else {alpha=1}
     p = ggplot(d, aes(x=x, y=y)) +
         geom_point(aes(colour=Type)) +
-   	geom_text_repel(aes(label=lab), size=2, segment.color='grey') +
-	geom_rug(data=d.rug, aes(x=x), sides='t', col='black', alpha=alpha) +
+   	geom_text_repel(aes(label=lab), size=3, segment.color='grey') +
+	#geom_rug(data=d.rug, aes(x=x), sides='t', col='black', alpha=alpha) +
 	xlab(paste0('log2(<TPM>) (Non-', lab.name, ')')) +
     	ylab(paste0('log2(<TPM>) (', lab.name, ')')) +
     	scale_colour_manual(values=c('lightcoral', 'black', 'steelblue3', 'lightgray')) +	
@@ -53,7 +59,8 @@ plot_contamination = function(u1, u2, coefs, residuals, lab.use=NULL, lab.fit=NU
 }
 
 
-detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NULL, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test', n.cores=1){
+detect_contamination = function(tpm, idents, samples, anno=NULL, groups=NULL, global_coefs=NULL, fit.n=50, fit.cutoff=2, do.plot=TRUE, lab.use=NULL, prefix='test', n.cores=1){
+    # groups = list of groups to use (e.g. Neurons)
     
     require(MASS)
     source('~/code/single_cell/parallel.r')
@@ -62,20 +69,23 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NU
     # initialize variables
     if(is.null(anno)){anno = structure(unique(as.character(idents)), names=unique(as.character(idents)))}
     if(any(! idents %in% anno)){stop('! idents %in% anno')}
-    groups = names(anno)
+    if(is.null(groups)){groups = names(anno)}
+    print(anno)
+    print(groups)
     
     # summarize data
     cat('\n\nDetecting ambient contamination\n\n')
-    print(table(idents))
-    print(table(samples))
-    print(groups)
-    
+    print(idents)
+    print(samples)
+        
     # iterate over groups
     #res = run_parallel(foreach(group=groups) %dopar% {print(group)
     res = sapply(groups, function(group){
-        
+        print(group)
+        flush.console()
+		
         # output file
-        out = paste(prefix, group, 'fit.png', sep='.')
+        out = paste(prefix, group, 'fit.pdf', sep='.')
     	
         # subset data
 	i = idents %in% anno[[group]]
@@ -102,7 +112,7 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NU
 	l2 = nice_log2(u2)
 	
         # fit boundaries
-        lo = quantile(l2[u1 == 0], .99, na.rm=T)
+        lo = quantile(l2[u1 == 0], .9, na.rm=T)
         hi = sort(l2, decreasing=T)[100]
         cat(paste0('\n\tLo Cutoff = ', lo, '\n\tHi Cutoff = ', hi))
         exclude = list(c(-Inf, lo), c(hi, Inf))
@@ -123,7 +133,7 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, global_coefs=NU
 	residuals = l1 - (coefs[2,1]*l2 + coefs[1,1])
 	lab.con = names(which(residuals < fit.cutoff))
 	cat(paste0('\n\tLikely contaminants: ', paste(lab.con, collapse=', ')))
-	if(do.plot == TRUE){plot_contamination(u1, u2, coefs, residuals, lab.use=lab.use, lab.fit=lab.fit, fit.cutoff=fit.cutoff, out=out)}
+	if(do.plot == TRUE){plot_contamination(u1, u2, coefs, residuals, lab.use=lab.use, lab.fit=lab.fit, fit.cutoff=fit.cutoff, out=out, lab.n=20)}
 	
 	# update results
 	list(u1=u1, u2=u2, fit=fit, coefs=coefs, residuals=residuals, lab.use=lab.use, lab.fit=lab.fit, lab.con=lab.con)
@@ -145,7 +155,7 @@ full_detect_contamination = function(tpm, groups, idents, samples, anno=NULL, fi
     # Fit models to cell groups
     cat('\n\nDetect contamination\n\n')
     cat('\nFitting group models\n')
-    res.groups = detect_contamination(tpm, groups, samples, anno=NULL, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix, n.cores=n.cores)
+    res.groups = detect_contamination(tpm, idents=groups, samples=samples, anno=NULL, fit.n=fit.n, fit.cutoff=fit.cutoff, do.plot=do.plot, lab.use=lab.use, prefix=prefix, n.cores=n.cores)
     
     # Average model across groups
     coefs = sapply(res.groups, function(a) a$coefs)

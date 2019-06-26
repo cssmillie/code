@@ -1,3 +1,9 @@
+get_module = function(seur, gene){
+    u = as.numeric(seur@data[gene,])
+    v = t(as.matrix(seur@data))
+    sort(cor(u, v)[1,])
+}
+
 gene_modules = function(seur, ident, data, gene, num_pcs=10, method='pearson', scale=FALSE){
     
     require(rsvd)

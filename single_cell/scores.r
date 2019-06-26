@@ -5,7 +5,8 @@ psi_log = function(x, base=2, zero=NULL){
     if(is.null(zero)){
         if(any(x == 0)){zero = .5*min(x[x > 0])} else {zero = 0}
     }
-    log(x + zero, base=base)
+    x[x == 0] = zero
+    log(x, base=base)
 }
 
 geom_mean = function(x, base=2, zero=NULL){
@@ -60,15 +61,18 @@ predict_dge_type = function(x, bases.use=c(2, exp(1), 10), tol=1e-4){
 }
 
 
-calc_tpm = function(seur=NULL, data=NULL, genes.use=NULL, cells.use=NULL, total=1e4){    
+calc_tpm = function(seur=NULL, counts=NULL, tpm=NULL, data=NULL, genes.use=NULL, cells.use=NULL, total=1e4){    
     # Calculate TPM from @raw.data or data argument
     
     # Select counts data
+    if(!is.null(counts)){data = counts; type = 'counts'}
+    if(!is.null(tpm)){data = tpm; type = 'tpm'}
     if(is.null(data)){
         print('Guessing data type = counts')
         data = seur@raw.data
 	type = 'counts'
-    } else {
+    }
+    if(is.null(type)){
         type = predict_dge_type(data[, sample(1:ncol(data), 2)])
     }
     if(is.null(genes.use)){genes.use = rownames(data)}
@@ -200,7 +204,7 @@ map_names = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, fi
 
 
 score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, files=NULL, file.cols=NULL, file.regex=NULL, top=NULL, source='auto', target='auto', scores=NULL,
-                       data.use='log2', combine_genes='mean', groups=NULL, group_stat='mean', genes_first=TRUE, cells.use=NULL, make.names=TRUE, do.log=FALSE){
+                       data.use='log2', combine_genes='mean', groups=NULL, group_stat='mean', genes_first=TRUE, cells.use=NULL, make.names=TRUE, do.log=FALSE, drop_zeros=TRUE){
 
     require(Matrix)
     require(Matrix.utils)
@@ -220,7 +224,13 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     if(!is.null(scores)){
         scores = as.data.frame(scores)
 	if(length(intersect(rownames(scores), colnames(seur@data))) == 0){
-	    rownames(scores) = colnames(seur@data)
+	    if(nrow(scores) == length(cells.use)){
+	        rownames(scores) = cells.use
+	    } else if(nrow(scores) == ncol(seur@data)){
+	        rownames(scores) = colnames(seur@data)
+	    } else {
+	        stop('Cannot find rownames for scores')
+	    }
 	}
 	scores = scores[colnames(seur@data),,drop=F]
     }
@@ -251,25 +261,24 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	# returns [genes x cells] or [1 x cells] matrix
 	
 	if(nrow(x) == 1){return(x[1,,drop=F])}
-	
 	if(method == 'sum'){
 	    t(colSums(x))
 	} else if(method == 'mean'){
-	    t(colMeans(x))
+	    t(colMeans(x, na.rm=T))
 	} else if(method == 'geom'){
 	    t(colGmeans(x))
 	} else if(method == 'max'){
 	    x = x/apply(x, 1, max)
-	    t(colMeans(x))
+	    t(colMeans(x, na.rm=T))
 	} else if(method == 'norm'){
 	    x = x/apply(x, 1, sum)
-	    t(colMeans(x))
+	    t(colMeans(x, na.rm=T))
 	} else if(method == 'scale'){
 	    x = t(scale(t(x)))
-	    t(colMeans(x))
+	    t(colMeans(x, na.rm=T))
 	} else if(method == 'scale2'){
 	    x = t(scale(t(x), center=F))
-	    t(colMeans(x))
+	    t(colMeans(x, na.rm=T))
 	} else if(method == 'none'){
 	    x
 	}else {
@@ -285,8 +294,8 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	# returns [genes x groups] matrix
 	
 	if(is.null(groups)){return(x)}
-	if(method == 'n'){
-	    x = x > 0
+	if(method %in% c('n', 'sum')){
+	    if(method == 'n'){x = x > 0}
 	    x = t(data.frame(aggregate(t(x), list(groups), sum, na.rm=T), row.names=1))
 	} else {
 	    if(method == 'alpha'){x = x > 0}
@@ -347,6 +356,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     # Fix names
     if(make.names == TRUE){names.use = make.names(names.use)}
     names(scores) = names.use
+    if(drop_zeros == FALSE){cols.use = names.use; if(is.null(cols.use)){cols.use=names.use}; scores[,setdiff(cols.use, colnames(scores))] = 0; scores = scores[,cols.use]}
 
     # Combine data
     if(!is.null(backup)){

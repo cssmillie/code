@@ -1,6 +1,6 @@
 
 
-mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, window_size=100, do.plot=FALSE){
+mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, window_size=100, do.plot=FALSE, invert=FALSE){
     
     # calculate mean and cv
     u = apply(data, 1, mean)
@@ -20,7 +20,11 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
         # select variable genes from equal frequency bins
         library(Hmisc)
 	k = as.integer(num_genes/num_bins)
-        var_genes = as.character(unlist(tapply(d, cut2(u, g=num_bins), function(a) names(sort(a, decreasing=T)[1:k]))))
+	if(invert == FALSE){
+	    var_genes = as.character(unlist(tapply(d, cut2(u, g=num_bins), function(a) names(sort(a, decreasing=T)[1:k]))))
+	} else {
+	    var_genes = as.character(unlist(tapply(d, cut2(u, g=num_bins), function(a) names(sort(a, decreasing=F)[1:k]))))
+	}
 
     } else {
 

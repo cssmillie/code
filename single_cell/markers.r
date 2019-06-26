@@ -27,6 +27,8 @@ unorder_factors = function(x){
 relevel_factors = function(x){
     j = sapply(x, is.factor)
     x[,j] = lapply(x[,j,drop=F], function(a) droplevels(a))
+    j = sapply(x, function(a) length(unique(a)) > 1)
+    x = x[,j,drop=F]
     x
 }
 
@@ -75,6 +77,9 @@ select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_ce
         
     cat('\nSelecting cells\n')
     
+    # Get batch
+    if(is.null(batch.use)){batch.use = rep('All', ncol(seur@data))}
+    
     # Subset data
     i = apply(covariates, 1, function(a) !any(is.na(a)))
     covariates = covariates[i,,drop=F]
@@ -97,6 +102,7 @@ select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_ce
     
         # Combine batch.use and groups to sample evenly across batches
         batch.use = as.factor(paste0(groups, batch.use))
+	print(table(batch.use))
 	
 	# Sample [max_cells] separately from each group
 	cells = unname(unlist(lapply(levels(groups), function(group){
@@ -163,7 +169,8 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
     
     # Model matrix
     print('Model matrix')
-    mm = as.matrix(model.matrix(as.formula(formula), data=unorder_factors(covariates)))
+    mm_formula = gsub('\\+ *\\S*\\|\\S+', '', as.character(formula), perl=T)
+    mm = as.matrix(model.matrix(as.formula(mm_formula), data=unorder_factors(covariates)))
         
     # Invert matrix
     print('Invert matrix')
@@ -300,26 +307,29 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.
     # Check covariates
     q = sapply(covariates, typeof)
     if('character' %in% q){print(q); stop('error: invalid covariates type')}
-        
+    
     # Select cells
     cells.use = select_cells(seur, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
-        
+    
     # TPM for log fold changes [genes x cells]
     tpm = get_data(seur, data.use=tpm.use, tpm=tpm, cells.use=cells.use)
     
     # Data for DE test [genes x cells]
     data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use)
     
+    stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
+    
     if(filter_genes == TRUE){
         
         # Expression stats
-        stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
-
+        #stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
+	
 	# Select genes
         genes.use = select_genes(seur, stats, data.use=data, genes.use=genes.use, min_cells=min_cells, min_alpha=min_alpha, min_fc=min_fc, dir=dir)
         if(length(genes.use) == 0){return(c())}
         
-    } else {stats = NULL; genes.use = rownames(data)}
+    } else {#stats = NULL;
+        if(is.null(genes.use)){genes.use = rownames(data)}}
         
     # FDR stats
     if(do.stats == TRUE){
@@ -345,7 +355,7 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.
     if(test.use == 'gsea'){markers = gsea.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)}
     if(test.use == 'roc'){markers = de.rocr(data, labels, measures='auc')}
     if(test.use == 'mpath'){markers = de.mpath(seur@raw.data[genes.use,cells.use], covariates=covariates, formula=formula)}
-
+    
     # Add cluster information
     if(! 'contrast' %in% colnames(markers)){
         markers$contrast = paste0('ident', levels(labels)[nlevels(labels)])
@@ -353,9 +363,11 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.
     
     # Merge results
     markers = as.data.table(markers)
-    setkey(stats, gene, contrast)
     setkey(markers, gene, contrast)
-    markers = markers[stats,]
+    if(!is.null(stats)){
+        setkey(stats, gene, contrast)
+        markers = markers[stats,]    
+    }
     
     # Sort markers
     if('auc' %in% colnames(markers)){
@@ -383,6 +395,7 @@ p.find_all_markers = function(seur, ident.use=NULL, data.use='log2', tpm=NULL, d
     
     # Get cell identities
     if(is.null(ident.use)){ident.use = seur@ident}
+    ident.use = as.factor(ident.use)
     idents = as.character(levels(ident.use))
         
     # Pre-calculate TPM and data
@@ -559,8 +572,9 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
     
     # Cleanup results
     colnames(res) = c('gene', 'contrast', 'coefD', 'pvalD', 'coefC', 'pvalC', 'mastfc', 'pvalH')
+    res = res[res$gene != '',]
     res = res[order(res$contrast, res$pvalH),]
-
+    
     # Replace NAs in mastfc with maximum
     res = as.data.table(res)
     res[, mastfc := ifelse(is.na(mastfc), max(mastfc, na.rm=T), mastfc), .(contrast)]
@@ -666,7 +680,7 @@ next_stats = function(markers, anno=NULL, filter=identity){
     for(i in idents){
         
         # Add "same" stats
-	j = select_keys(anno, i)
+	j = select_keys(anno, as.character(i))
 	m = filter(markers[ident %in% j])
 	if(nrow(m) > 0){
 	    m = m[,{i = which.max(mean); .(same_alpha=alpha[i], same_mu=mu[i], same_mean=mean[i], same_ident=ident[i])}, .(gene)]
@@ -674,7 +688,7 @@ next_stats = function(markers, anno=NULL, filter=identity){
 	}
 		
 	# Add "next" stats
-	j = select_keys(anno, i, invert=T)
+	j = select_keys(anno, as.character(i), invert=T)
 	m = markers[ident %in% j][,{i = which.max(mean); .(next_alpha=alpha[i], next_mu=mu[i], next_mean=mean[i], next_ident=ident[i])}, .(gene)]
 	markers[.(i, m$gene), c('next_alpha', 'next_mu', 'next_mean', 'next_ident') := m[,.(next_alpha, next_mu, next_mean, next_ident)]]
     }
