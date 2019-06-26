@@ -70,13 +70,9 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, groups=NULL, gl
     if(is.null(anno)){anno = structure(unique(as.character(idents)), names=unique(as.character(idents)))}
     if(any(! idents %in% anno)){stop('! idents %in% anno')}
     if(is.null(groups)){groups = names(anno)}
-    print(anno)
-    print(groups)
     
     # summarize data
     cat('\n\nDetecting ambient contamination\n\n')
-    print(idents)
-    print(samples)
         
     # iterate over groups
     #res = run_parallel(foreach(group=groups) %dopar% {print(group)
