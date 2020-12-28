@@ -54,8 +54,8 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
 }
 
 
-get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, min_ident=25, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
-
+get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, min_ident=25, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
+    
     source('~/code/single_cell/parallel.r')
     
     # Fix ident
@@ -73,7 +73,21 @@ get_var_genes = function(data, ident=NULL, method='loess', do.tpm=F, num_genes=1
     levels(ident)[levels(ident) %in% i] = new_name
     print(table(ident))
     
-    var_genes = sapply(levels(ident), function(i){print(i)
+    # Subset idents
+    levels.use = names(sort(table(ident), dec=T))[1:min(50, length(unique(ident)))]
+    print(table(ident)[levels.use])
+
+    # Subset genes
+    if(is.null(genes.use)){
+        genes.use = rownames(data)
+    } else {
+        genes.use = intersect(rownames(data), genes.use)
+	print(paste('Subsetting from', nrow(data), 'to', length(genes.use), 'genes'))
+    }
+    data = data[genes.use,]
+    
+    # var_genes = sapply(levels(ident), function(i){print(i)
+    var_genes = sapply(levels.use, function(i){print(i)
     
             # Start plotting device
 	    if(!is.null(prefix)){png(paste(prefix, i, 'png', sep='.'), w=1000, h=800)}

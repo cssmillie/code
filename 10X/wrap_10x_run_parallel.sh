@@ -11,7 +11,8 @@
 
 source /broad/software/scripts/useuse
 reuse UGER
-export PATH=/seq/regev_genome_portal/SOFTWARE/10X/cellranger-VERSION:$PATH
+use .cellranger-3.0.2
+#export PATH=/seq/regev_genome_portal/SOFTWARE/10X/cellranger-VERSION:$PATH
 
 SEED=$(awk "NR==($SGE_TASK_ID+1)" CSV)
 channel_lane=$(echo "$SEED" | cut -d$',' -f1)

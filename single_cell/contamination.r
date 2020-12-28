@@ -85,18 +85,19 @@ detect_contamination = function(tpm, idents, samples, anno=NULL, groups=NULL, gl
     	
         # subset data
 	i = idents %in% anno[[group]]
-	j = idents %in% setdiff(idents, i)
-		
+	j = idents %in% setdiff(idents, anno[[group]])
+	#j = idents %in% idents
+
 	# sample frequencies
 	f = table(as.factor(samples)[i])
 	f = as.matrix(f/sum(f))
 	
 	# group mean
-	u1 = rowMeans(tpm[,i])
+	u1 = rowMeans(tpm[,i,drop=F])
 	
 	# other mean
 	u2 = sapply(unique(samples), function(a){
-	    rowSums(tpm[,j & (samples == a)])/sum(samples == a)
+	    rowSums(tpm[,j & (samples == a),drop=F])/sum(samples == a)
 	})
 	
 	stopifnot(colnames(u2) == colnames(f))
@@ -186,3 +187,26 @@ add_contamination = function(markers, res){
 }
 
 
+run_scrublet = function(counts){
+
+    out = tempfile(pattern='scrublet.', tmpdir='~/tmp', fileext='')
+    print(paste('Writing counts:', out))
+    write_mtx(t(counts), prefix=out)
+    
+    print('Running Scrublet')
+    out = paste0(normalizePath(out), '.matrix.mtx')
+    cmd = paste0('python ~/code/single_cell/run_scrublet.py --data ', out, ' --out ', out)
+    print(cmd)
+    system(cmd)
+    
+    print('Reading output')
+    res = read.table(out, sep='\t')
+    rownames(res) = colnames(counts)
+    colnames(res) = c('scrublet_score', 'scrublet_prediction')
+    
+    print('Cleaning up')
+    system(paste0('rm ', out))
+    
+    # Return scrublet results
+    return(res)
+}

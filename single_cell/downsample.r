@@ -1,5 +1,3 @@
-
-
 require(rsvd)
 require(cccd)
 require(expm)
@@ -30,7 +28,7 @@ num_cells_per_group = function(groups, total_cells=NULL, cells_per_group=NULL){
 
 resample = function(x,...){if(length(x)==1) x else sample(x,...)} 
 
-simple_downsample = function(cells, groups, ngene=NULL, total_cells=NULL, cells_per_group=NULL){
+simple_downsample = function(cells, groups, ngene=NULL, total_cells=NULL, cells_per_group=NULL, replace=FALSE){
 
     # Downsample cells evenly across groups
     # Option: provide ngene to select HQ cells
@@ -49,12 +47,20 @@ simple_downsample = function(cells, groups, ngene=NULL, total_cells=NULL, cells_
     ds.cells = sapply(levels(groups), function(a){
 
         # Shuffle cells within group
-        cells = resample(cells[groups == a])
+        cells = resample(cells[groups == a], replace=replace)
 	
 	# Select by highest ngene
 	cells[order(ngene[cells], decreasing=T)[1:num_cells_per_group[[a]]]]
     })
     ds.cells = as.character(na.omit(unname(unlist(ds.cells))))
+
+    # Fix total cells
+    if(!is.null(total_cells)){
+	if(length(ds.cells) > total_cells){
+            ds.cells = sort(resample(ds.cells, total_cells))
+	}
+    }
+    
     return(ds.cells)
 }
 

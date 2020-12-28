@@ -74,7 +74,7 @@ select_cells = function(seur, covariates, batch.use=NULL, cells.use=NULL, max_ce
     # 2. build groups from covariates matrix
     # 3. select max_cells from each group
     # 4. sample evenly across batch.use
-        
+    
     cat('\nSelecting cells\n')
     
     # Get batch
@@ -282,10 +282,17 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
 p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.use='tpm', data.use='log2', genes.use=NULL, cells.use=NULL, test.use='roc', min_cells=3, min_alpha=.05, min_fc=1.25,
                           max_cells=1000, batch.use=NULL,
 	       	          dir='pos', tpm=NULL, covariates=NULL, formula='~ ident', lrt_regex='ident', gsea.boot=100, invert_method='auto', invert_logic='last', do.stats=FALSE, n.cores=1,
-			  filter_genes=TRUE){
+			  filter_genes=TRUE, qnorm=FALSE, glmer=FALSE, fix_rank=FALSE){
 
     # Get cell identities
     if(is.null(ident.use)){ident.use = seur@ident}
+
+    # Check mixed effects model
+    if(any(grepl('\\|', as.character(formula)))){
+        print('Detected random effects. Setting glmer=TRUE')
+	glmer = TRUE
+	library(lme4)
+    }
     
     # Build covariates
     print(c(ident.1, ident.2))
@@ -312,10 +319,10 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.
     cells.use = select_cells(seur, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
     
     # TPM for log fold changes [genes x cells]
-    tpm = get_data(seur, data.use=tpm.use, tpm=tpm, cells.use=cells.use)
+    tpm = get_data(seur, data.use=tpm.use, tpm=tpm, cells.use=cells.use, qnorm=qnorm)
     
     # Data for DE test [genes x cells]
-    data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use)
+    data = get_data(seur, data.use=data.use, tpm=tpm, cells.use=cells.use, qnorm=qnorm)
     
     stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
     
@@ -346,12 +353,25 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.
     covariates = unorder_factors(covariates[cells.use, , drop=F])
     covariates = relevel_factors(covariates)
     
+    # Fix rank deficiency (zero lowest expressing cell for each gene)
+    if(fix_rank == TRUE){
+        for(gi in rownames(data)){
+	    tryCatch({
+	        j = data[gi,] > 0
+	        u = names(which.min(data[gi, j]))
+	        v = names(which.max(data[gi, !j]))
+	        data[gi, v] = data[gi, u]
+	        data[gi, u] = 0
+	    }, error=function(e){NULL})
+	}
+    }
+    
     # Run marker tests
     labels = covariates[,1]
     if(test.use == 'f'){markers = de.rocr(data, labels, measures='f')}
     if(test.use == 'fdr'){markers = de.fdr(data, labels)}
     if(test.use == 'pr'){markers = de.rocr(data, labels, measures=c('prec', 'rec'))}
-    if(test.use == 'mast'){markers = de.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, n.cores=n.cores)}
+    if(test.use == 'mast'){markers = de.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, n.cores=n.cores, glmer=glmer)}
     if(test.use == 'gsea'){markers = gsea.mast(data, covariates=covariates, formula=formula, lrt_regex=lrt_regex, gsea.boot=gsea.boot, n.cores=n.cores)}
     if(test.use == 'roc'){markers = de.rocr(data, labels, measures='auc')}
     if(test.use == 'mpath'){markers = de.mpath(seur@raw.data[genes.use,cells.use], covariates=covariates, formula=formula)}
@@ -391,24 +411,28 @@ p.find_markers = function(seur, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.
 }
 
 
-p.find_all_markers = function(seur, ident.use=NULL, data.use='log2', tpm=NULL, do.precalc=T, n.cores=1, ...){
-    
+p.find_all_markers = function(seur, idents=NULL, ident.use=NULL, data.use='log2', tpm=NULL, do.precalc=T, n.cores=1, qnorm=FALSE, ...){
+
+    # note:
+    # idents = list of idents to test (default = all)
+        
     # Get cell identities
     if(is.null(ident.use)){ident.use = seur@ident}
     ident.use = as.factor(ident.use)
-    idents = as.character(levels(ident.use))
-        
+    if(is.null(idents)){idents = as.character(levels(ident.use))} else {idents = unique(as.character(idents))}
+    print(paste('Calculating markers for:', paste(idents, collapse=', ')))
+    
     # Pre-calculate TPM and data
     if(do.precalc == TRUE){
-        tpm = get_data(seur, data.use='tpm', tpm=tpm)
-        data.use = get_data(seur, data.use=data.use, tpm=tpm)
+        tpm = get_data(seur, data.use='tpm', tpm=tpm, qnorm=qnorm)
+        data.use = get_data(seur, data.use=data.use, tpm=tpm, qnorm=qnorm)
     }
     
     # Find marker genes
     run_parallel(
 	foreach(i=idents, .combine=rbind) %dopar% {
 	    print(i)
-	    p.find_markers(seur, ident.1=i, ident.use=ident.use, tpm=tpm, data.use=data.use, n.cores=1, ...)
+	    p.find_markers(seur, ident.1=i, ident.use=ident.use, tpm=tpm, data.use=data.use, n.cores=1, qnorm=FALSE, ...)
 	},
 	n.cores = n.cores
     )
@@ -536,7 +560,7 @@ de.fdr = function(data, labels, sens_cut=.1){
 }
 
 
-de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
+de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1, glmer=FALSE){
     
     load_mast()
     options(mc.cores=n.cores)
@@ -551,8 +575,12 @@ de.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, n.cores=1){
         formula = paste('~' , paste(colnames(covariates), collapse=' + '))
     }
     formula = as.formula(formula)
-    zlm.obj = zlm(formula, sca, force=TRUE)
-    
+    if(glmer == FALSE){
+        zlm.obj = zlm(formula, sca, force=TRUE)
+    } else {
+        zlm.obj = zlm(formula, sca, force=TRUE, method='glmer', ebayes=FALSE)
+    }
+
     # Likelihood ratio test
     if(is.logical(lrt_regex)){lrt_regex = colnames(covariates)}
     contrasts = grep(paste(lrt_regex, collapse='|'), colnames(zlm.obj@coefC), value=T, perl=T)
@@ -700,19 +728,59 @@ next_stats = function(markers, anno=NULL, filter=identity){
     return(markers)
 }
 
-write_mast = function(markers, max_pval=.05, max_padj=1, regex='', prefix='test'){
+write_mast_excel = function(markers, out='test.xlsx', split_fxn=NULL, cols.use='all', legend=FALSE, legend.regex=FALSE, do.sort=FALSE, max_rows=250){
     source('~/code/util/excel.r')
     library(naturalsort)
-    markers = markers[order(padjD)][pvalD <= max_pval][padjD <= max_padj]
-    markers = markers[grep(regex, contrast)]
-    m.pos = markers[coefD > 0]
-    m.neg = markers[coefD < 0]
-    m.pos = split(m.pos, m.pos$ident)
-    m.neg = split(m.neg, m.neg$ident)
-    m.pos = m.pos[naturalsort(names(m.pos))]
-    m.neg = m.neg[naturalsort(names(m.neg))]
-    if(length(unique(m.pos$contrast)) > 1){stop('Multiple contrasts per ident')}
-    if(length(unique(m.neg$contrast)) > 1){stop('Multiple contrasts per ident')}
-    write_excel(m.pos, out=paste0(prefix, '.pos.xlsx'))
-    write_excel(m.neg, out=paste0(prefix, '.neg.xlsx'))
+    
+    # fix filenames
+    if(!grepl('xlsx', out)){stop('error: outfile suffix (must be .xlsx)')}
+
+    # convert markers to list
+    if(!is.null(dim(markers))){
+        markers = list(markers)
+    }
+    
+    # select columns to print
+    cols.all = sort(unique(unlist(sapply(markers, colnames))))
+    if(cols.use == 'all'){
+        cols.use = cols.all
+    }
+    else if(cols.use == 'auto'){
+        cols.use = c('gene', 'ident', 'coefD', 'pvalD', 'padjD', 'coefC', 'pvalC', 'padjC', 'mastfc', 'alpha', 'ref_alpha', 'mu', 'ref_mu', 'mean', 'ref_mean', 'log2fc', 'contam.res')
+    } else {
+        # good to go
+    }
+    cols.use = intersect(cols.use, cols.all)
+    
+    # read legend
+    if(legend == TRUE){
+        legend = read.table('~/code/single_cell/mast_legend.txt', sep='\t', header=T)
+    }
+    if(legend.regex == FALSE){
+	i = legend[,1] %in% cols.use
+        j = setdiff(cols.use, legend[,1])	
+    } else {
+	i = sapply(legend[,1], function(a) any(grepl(a, cols.use)))
+        j = sapply(cols.use, function(a) grepl(paste(legend[,1], collapse='|'), a))
+    }
+    i[[1]] = i[[length(i)]] = TRUE
+    legend = legend[i,,drop=F]
+    if(length(j) > 0){
+        print(j)
+	print(legend)
+        stop('error: incomplete legend')
+    }
+    
+    # split markers
+    if(!is.null(split_fxn)){
+        markers = unlist(sapply(markers, function(a) split(a, split_fxn(a)), simplify=F), recursive=F)
+    }
+    markers$Legend = legend
+    if(do.sort == TRUE){
+        markers = markers[naturalsort(names(markers))]
+    }
+
+    # write excel table
+    write_excel(markers, out=out, max_rows=max_rows)
 }
+

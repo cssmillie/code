@@ -1,0 +1,29 @@
+Column	Description
+ident	Cell subset or lineage
+subcluster	Subcluster or sublineage
+gene	Gene
+coefD	Coefficient (discrete term)
+pvalD	P-value (discrete term)
+padjD	Adjusted p-value (discrete term)
+coefC	Coefficient (continuous term)
+pvalC	P-value (continuous term)
+padjC	Adjusted p-value (continuous term)
+mastfc	Fold change estimated by MAST
+alpha	Fraction of expressing cells
+ref_alpha	Fraction of expressing cells (reference group)
+mu	Mean log2(TP10K+1) in expressing cells
+ref_mu	Mean log2(TP10K+1) in expressing cells (reference group)
+mean	Mean log2(TP10K+1) in all cells
+ref_mean	Mean log2(TP10K+1) in all cells (reference group)
+log2fc	log2 fold change (relative to reference group)
+contam.res	Residual (contamination model)
+next_ident	Cell subset or lineage (next highest group)
+next_alpha	Fraction of expressing cells (next highest group)
+next_mu	Mean log2(TP10K+1) in expressing cells (next highest group)
+next_mean	Mean log2(TP10K+1) in all cells (next highest group)
+next_log2fc	log2 fold change (relative to next highest group)
+lcell	Ligand-expressing cell subset
+rcell	Receptor-expressing cell subset
+lig	Ligand gene
+rec	Receptor gene
+Note:	reference group = all other cells (for example, reference group for Tregs = all non-Tregs)

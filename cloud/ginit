@@ -1,2 +1,4 @@
 reuse Google-Cloud-SDK
-export CLOUD=
+gcloud auth login --no-launch-browser
+
+# Then we can use gsutil commands, e.g. gsutil -m cp [source] [destination]

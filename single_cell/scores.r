@@ -99,7 +99,7 @@ calc_tpm = function(seur=NULL, counts=NULL, tpm=NULL, data=NULL, genes.use=NULL,
 }
 
 
-get_data = function(seur, data.use='tpm', tpm=NULL, genes.use=NULL, cells.use=NULL){
+get_data = function(seur, data.use='tpm', tpm=NULL, genes.use=NULL, cells.use=NULL, qnorm=FALSE){
     
     # Retrieve data from a Seurat object
     # data.use can be: counts, tpm, log2, data, any matrix
@@ -107,6 +107,7 @@ get_data = function(seur, data.use='tpm', tpm=NULL, genes.use=NULL, cells.use=NU
 
     if(!is.character(data.use)){
         data = data.use
+	qnorm = FALSE
     } else if(data.use == 'counts'){
         data = seur@raw.data
     } else if(data.use == 'tpm'){
@@ -130,6 +131,12 @@ get_data = function(seur, data.use='tpm', tpm=NULL, genes.use=NULL, cells.use=NU
     } else {
         stop('Error: get_data invalid argument')
     }
+    
+    # Quantile normalization
+    if(qnorm == TRUE){
+        data = quantile_normalize(data=data)
+    }
+    data = as(data, 'sparseMatrix')
     
     # Subset genes and cells
     if(!is.null(genes.use)){data = data[intersect(genes.use, rownames(data)),]}
@@ -204,7 +211,7 @@ map_names = function(seur=NULL, data=NULL, meta=NULL, names=NULL, regex=NULL, fi
 
 
 score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, files=NULL, file.cols=NULL, file.regex=NULL, top=NULL, source='auto', target='auto', scores=NULL,
-                       data.use='log2', combine_genes='mean', groups=NULL, group_stat='mean', genes_first=TRUE, cells.use=NULL, make.names=TRUE, do.log=FALSE, drop_zeros=TRUE){
+                       data.use='log2', combine_genes='mean', groups=NULL, group_stat='mean', genes_first=TRUE, cells.use=NULL, make.names=TRUE, do.log=FALSE, drop_zeros=TRUE, qnorm=FALSE){
 
     require(Matrix)
     require(Matrix.utils)
@@ -222,7 +229,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     if(is.null(meta)){meta = seur@data.info}
     if(!is.null(groups)){names(groups) = colnames(seur@data)}
     if(!is.null(scores)){
-        scores = as.data.frame(scores)
+        scores = as.data.frame(scores, stringsAsFactors=F)
 	if(length(intersect(rownames(scores), colnames(seur@data))) == 0){
 	    if(nrow(scores) == length(cells.use)){
 	        rownames(scores) = cells.use
@@ -243,7 +250,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     if(length(genes) == 0 & length(feats) == 0){return(scores)}
     
     # Select data with genes.use    
-    if(is.null(data)){data = get_data(seur, data.use=data.use, cells.use=cells.use)}
+    if(is.null(data)){data = get_data(seur, data.use=data.use, cells.use=cells.use, qnorm=qnorm)}
     
     # Subset cells
     if(!is.null(cells.use)){
@@ -340,7 +347,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
 	if(do.log == TRUE){
 	    si = psi_log(si, base=2)
 	}
-	si = data.frame(t(si))
+	si = data.frame(t(si), stringsAsFactors=F)
     })
     
     # Collapse scores
@@ -349,7 +356,7 @@ score_cells = function(seur=NULL, names=NULL, data=NULL, meta=NULL, regex=NULL, 
     } else {
         do.collapse = all(lapply(scores, ncol) == 1)
 	if(do.collapse == TRUE){
-	    scores = as.data.frame(do.call(cbind, scores))
+	    scores = as.data.frame(do.call(cbind, scores), stringsAsFactors=F)
 	}
     }
     
@@ -420,3 +427,27 @@ score_signatures = function(seur=NULL, gene_sets=NULL, cells.use=NULL, cells.bg=
     }, simplify=F)
 }
 
+nice_agg = function(x, g, type='mean'){
+    # memory efficient version of data.frame(aggregate(x, list(g), mean), row.names=1)
+    if(nrow(x) != length(g)){
+        stop('error: invalid dimensions (transpose data?)')
+    }
+    g = as.factor(g)
+    y = sapply(levels(g), function(gi){
+        i = (g == gi)
+	i[is.na(i)] = FALSE
+	if(sum(i) > 0){
+	    if(type == 'mean'){
+	        colMeans(x[i,,drop=F])
+	    } else if(type == 'sum'){
+	        colSums(x[i,,drop=F])
+	    }
+	} else {
+	    rep(NA, ncol(x))
+	}
+    })
+    y = t(y)
+    rownames(y) = levels(g)
+    colnames(y) = colnames(x)
+    y
+}

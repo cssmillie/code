@@ -33,7 +33,7 @@ cross_nng = function(x, groups, k=10){
     graph(edges, n = n, directed = TRUE)
 }
 
-run_graph_cluster = function(data, k=100, groups=NULL, method='infomap', weighted=FALSE, dist='cosine', do.fast=FALSE, out=NULL, knn=NULL){
+run_graph_cluster = function(data, k=100, groups=NULL, method='infomap', weighted=FALSE, dist='cosine', do.fast=FALSE, out=NULL, knn=NULL, algo=c("kd_tree", "cover_tree", "CR", "brute")){
     
     # Graph cluster rows of data
     require(cccd)
@@ -42,7 +42,7 @@ run_graph_cluster = function(data, k=100, groups=NULL, method='infomap', weighte
         
         print('Building kNN graph')
 	if(is.null(groups)){
-            knn = nng(data, k=k, method=dist, use.fnn=do.fast)
+            knn = nng(data, k=k, method=dist, use.fnn=do.fast, algorithm=algo)
 	} else {
 	    new_k = as.integer(k/length(unique(groups)))
 	    print(paste0('Calculating cross-kNN with ', length(unique(groups)), ' groups and k =', new_k))
@@ -58,24 +58,31 @@ run_graph_cluster = function(data, k=100, groups=NULL, method='infomap', weighte
         
         }
     }
+    
     if(method == 'louvain'){
         print('Louvain clustering')
-        m = cluster_louvain(as.undirected(knn))
+        m = cluster_louvain(as.undirected(knn))$membership
     }
     
     if(method == 'infomap'){
         print('Infomap clustering')
-        m = cluster_infomap(knn)
+        m = cluster_infomap(knn)$membership
+    }
+
+    if(method == 'leiden'){
+        print('Leiden clustering')
+	library(leiden)
+	m = leiden(knn)
     }
     
     # Write output
     print(sprintf('Clustering with k = %d finished', k))
     if(!is.null(out)){
-        write.table(m$membership, file=out, sep='\t', quote=F)
+        write.table(m, file=out, sep='\t', quote=F)
     }
     
     # Return clusters
-    clusters = data.frame(x=as.character(m$membership), row.names=rownames(data), stringsAsFactors=F)
+    clusters = data.frame(x=as.character(m), row.names=rownames(data), stringsAsFactors=F)
     colnames(clusters) = c(paste0(method, '.', dist, '.k', k))
     return(clusters)
 }
@@ -151,7 +158,7 @@ run_cluster = function(data, k, groups=NULL, method='infomap', weighted=FALSE, n
 	    }
 	    
 	    # Get clusters
-	    if(method %in% c('infomap', 'louvain')){
+	    if(method %in% c('infomap', 'louvain', 'leiden')){
             	gi = run_graph_cluster(data, k=i, groups=groups, method=method, weighted=weighted, dist=dist, do.fast=do.fast, out=out, knn=knn)
 	    }
 	    if(method == 'phenograph'){

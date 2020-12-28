@@ -289,9 +289,9 @@ ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=N
     
     # igraph -> data.frame for ggplot2
     if(layout.weights == TRUE){
-        net = ggnetwork(g, layout=layout, weights='weight', arrow.gap=0)
+        net = ggnetwork(g, layout=layout, weights='weight', arrow.gap=1)
     } else {
-        net = ggnetwork(g, layout=layout, arrow.gap=0)
+        net = ggnetwork(g, layout=layout, arrow.gap=1)
     }
     
     if(nlevels(node_colors) > 0){
@@ -337,12 +337,14 @@ ggplot_network = function(graph=NULL, edges=NULL, node_sizes=NULL, node_colors=N
 nice_network = function(graph=NULL, edges=NULL, symm=TRUE, self=FALSE,
 	                layout='fruchtermanreingold', layout_weights=TRUE,
 			size_legend='nodes', size_trans='identity', # 'log2', etc
-                        node_colors=NULL, node_sizes=NULL, node_scale=c(5,5), node_limits=NULL, node_alpha=1, node_pal=NULL, node_padding=.5, node_stroke=0.25,
+                        node_colors=NULL, node_sizes=NULL, node_scale=c(5,5), node_limits=NULL, node_alpha=1, node_pal=NULL, node_padding=.5, node_strokes=0.25,
 			edge_colors=NULL, edge_alpha=1, edge_scale=c(.5,.5), edge_limits=NULL, edge_pal=NULL, color_sign=FALSE, edge_padding=.5, linewidth_pal=1:6,
 			node_guide='legend', edge_guide='legend', size_guide='legend', linetype_guide='legend', do.legend=TRUE,
 			node_title='', edge_title='', size_title='', linetype_title='',
-			lab.use=NULL, lab.size=4, segment.color='grey',
-			ggtitle='', drop_levels=FALSE, out=NULL, nrow=1, ncol=1, ret.data=FALSE) {
+			lab.use=NULL, node_lab.size=4, edge_lab.size=3, segment.color='grey',
+			ggtitle='', drop_levels=FALSE, out=NULL, nrow=1, ncol=1, ret.data=FALSE,
+			do.arrow=FALSE, arrow.gap=.015
+			) {
     
     library(ggplot2)
     library(cowplot)    
@@ -364,6 +366,16 @@ nice_network = function(graph=NULL, edges=NULL, symm=TRUE, self=FALSE,
     # edge_scale = c(min, max) 
     # node_limits = c(min, max) * limits specify the minimum and maximum size of the value being plotted
     # edge_limits = c(min, max)
+    
+    # set arrow parameters
+    # --------------------
+    if(do.arrow == FALSE){
+        arrow = NULL
+	arrow.gap = 0
+    } else {
+        arrow = arrow(length=unit(6, "pt"), type="closed")
+	arrow.gap = arrow.gap
+    }
     
     # construct edgelist
     # ------------------
@@ -393,6 +405,8 @@ nice_network = function(graph=NULL, edges=NULL, symm=TRUE, self=FALSE,
     # node attributes
     # ---------------
     node_labels = sort(unique(c(edges$source, edges$target)))
+
+    node_sizes = unlist(node_sizes) # recently added
     if(is.null(node_sizes)){
         node_sizes = setNames(rep(1, length(node_labels)), node_labels)
     }
@@ -400,14 +414,23 @@ nice_network = function(graph=NULL, edges=NULL, symm=TRUE, self=FALSE,
         names(node_sizes) = node_labels
     }
     
+    node_colors = unlist(node_colors) # recently added
     if(is.null(node_colors)){
         node_colors = setNames(rep(1, length(node_labels)), node_labels)
     }
     if(is.null(names(node_colors))){
         names(node_colors) = node_labels
     }
-    if(is.null(levels(node_colors))){node_colors = as.factor(node_colors)}
-        
+    if(is.null(levels(node_colors))){
+        node_colors = as.factor(node_colors)
+    }
+    
+    node_strokes = unlist(node_strokes) # recently added
+    if(length(node_strokes) == 1){
+        node_strokes = setNames(rep(node_strokes, length(node_labels)), node_labels)
+    }
+    
+    
     # edge attributes
     # ---------------
     if(!is.null(edge_colors)){
@@ -443,8 +466,9 @@ nice_network = function(graph=NULL, edges=NULL, symm=TRUE, self=FALSE,
     node_order = V(g)$name
     V(g)$node_size = node_sizes[node_order]
     V(g)$node_color = as.character(node_colors[node_order])
+    V(g)$node_stroke = as.numeric(node_strokes[node_order])
     layout_weights = ifelse(layout_weights == TRUE, 'weight', NULL)
-    d = ggnetwork(g, layout=layout, weights=layout_weights, arrow.gap=0)
+    d = ggnetwork(g, layout=layout, weights=layout_weights, arrow.gap=arrow.gap)
     
     # scale sizes (after layout)
     # --------------------------
@@ -483,19 +507,19 @@ nice_network = function(graph=NULL, edges=NULL, symm=TRUE, self=FALSE,
     print(d)
     # scale nodes or edges (can't do both)
     if(size_legend == 'nodes'){
-        p = p + geom_segment(data=d[!i,], aes(x=x, y=y, xend=xend, yend=yend, colour=color, linetype=linetype), size=d[!i,'weight'], alpha=edge_alpha) +
-	    geom_point(data=d[i,], pch=21, aes(x=x, y=y, fill=node_color, size=node_size), stroke=node_stroke, alpha=node_alpha) +
+        p = p + geom_segment(data=d[!i,], aes(x=x, y=y, xend=xend, yend=yend, colour=color, linetype=linetype), size=d[!i,'weight'], alpha=edge_alpha, arrow=arrow) +
+	    geom_point(data=d[i,], pch=21, aes(x=x, y=y, fill=node_color, size=node_size, stroke=node_stroke), alpha=node_alpha) +
 	    scale_radius(size_title, limits=node_limits, range=node_scale, guide=size_guide, trans=size_trans)
     } else {
-        p = p + geom_segment(data=d[!i,], aes(x=x, y=y, xend=xend, yend=yend, colour=color, linetype=linetype, size=weight), alpha=edge_alpha) +
-	    geom_point(data=d[i,], pch=21, aes(x=x, y=y, fill=node_color), size=max(node_scale), stroke=node_stroke, alpha=node_alpha) +
+        p = p + geom_segment(data=d[!i,], aes(x=x, y=y, xend=xend, yend=yend, colour=color, linetype=linetype, size=weight), alpha=edge_alpha, arrow=arrow) +
+	    geom_point(data=d[i,], pch=21, aes(x=x, y=y, fill=node_color, stroke=node_stroke), size=max(node_scale), alpha=node_alpha) +
 	    scale_size(size_title, limits=edge_limits, range=edge_scale, guide=size_guide, trans=size_trans)
     }
 
     # construct the rest of the plot
     p = p + 
-	geom_text_repel(data=d[i,], aes(x=x, y=y, label=vertex.names), box.padding=unit(node_padding, 'lines'), segment.color=segment.color, size=lab.size) +
-	geom_text_repel(data=d[!i,], aes(x=(x+xend)/2, y=(y+yend)/2, label=label), box.padding=unit(edge_padding, 'lines'), segment.color=segment.color, size=lab.size) +
+	geom_text_repel(data=d[i,], aes(x=x, y=y, label=vertex.names), box.padding=unit(node_padding, 'lines'), segment.color=segment.color, size=node_lab.size) +
+	geom_text_repel(data=d[!i,], aes(x=(x+xend)/2, y=(y+yend)/2, label=label), box.padding=unit(edge_padding, 'lines'), segment.color=segment.color, size=edge_lab.size) +
 	scale_fill_manual(node_title, breaks=levels(d$node_color), labels=levels(d$node_color), values=node_pal, guide=node_guide, drop=FALSE) +
 	scale_colour_manual(edge_title, breaks=levels(d$color), labels=levels(d$color), values=edge_pal, guide=edge_guide, drop=FALSE) +
 	scale_linetype_manual(linetype_title, guide=linetype_guide, drop=FALSE, values=linewidth_pal) +

@@ -32,11 +32,9 @@
 #$ -o __MRO_STDOUT__
 #$ -e __MRO_STDERR__
 #$ -l h_vmem=__MRO_MEM_GB_PER_THREAD__G
-#$ -l h_rt=4:00:00
+#$ -l h_rt=24:00:00
+#$ -l os=RedHat7
 #$ -R y
 #$ -S "/usr/bin/env bash"
-
-use .bcl2fastq2-2.20.0.422
-use .bcl2fastq2-v2.20.0
 
 __MRO_CMD__

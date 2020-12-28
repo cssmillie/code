@@ -80,7 +80,7 @@ fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Panthe
     # Also uses random gene sets to correct the Fisher test
     
     # Select databases to use
-    dbs = grep(regex, listEnrichrDbs()[,1], value=T)
+    dbs = grep(regex, listEnrichrDbs()[,3], value=T)
     
     # Run enrichment test
     res = enrichr(genes, dbs)

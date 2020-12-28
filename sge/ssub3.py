@@ -12,20 +12,22 @@ def parse_args():
 
     # add command line arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('-m', default=8, help='memory (gb)')
+    parser.add_argument('-m', default=8, help='memory per requested node (gb)')
+    parser.add_argument('-g', default=0, help='group commands (n)', type=int)
     parser.add_argument('-t', default=7200, help='time (sec)')
     parser.add_argument('-O', default='RedHat7', help='OS (RedHat6, RedHat7)')
     parser.add_argument('-o', default='run', help='output prefix', required=True)
+    parser.add_argument('-n', default=1, help='number of cores (--pe)', type=int)    
     parser.add_argument('-P', default='regevlab', help='project name')
     parser.add_argument('-H', default='', help='header lines')
     parser.add_argument('-u', default='csmillie', help='username')
     parser.add_argument('-s', default='platinum.broadinstitute.org', help='server')
     parser.add_argument('-p', default=False, action='store_true', help='print commands')        
-    parser.add_argument('-w', default=600, type=float, help='pipeline wait time (sec)')
+    parser.add_argument('-w', default=60, type=float, help='pipeline wait time (sec)')
     parser.add_argument('-r', default=0, type=int, help='max retry')
     parser.add_argument('-R', default=True, action='store_false', help='no random users')
+    parser.add_argument('-G', default=False, action='store_true', help='group tasks')
     parser.add_argument('-W', default=float('inf'), type=float, help='max inactivity (sec)')
-    parser.add_argument('-g', default=False, action='store_true', help='group tasks')
     parser.add_argument('-v', default=True, action='store_false', help='no verbose')
     parser.add_argument('-x', default=False, action='store_true', help='write and exit')
     parser.add_argument('commands', nargs='?', default='')
@@ -152,9 +154,12 @@ class Submitter():
         
         # submission parameters
         self.tasks = [] # tasks
-        self.m = args.m # memory
+        self.m = args.m # memory per core
+        self.g = args.g # groups
+        self.G = args.G # group tasks flag
         self.t = args.t # time
         self.o = args.o # output
+        self.n = args.n # number of cores
         self.O = args.O # OS (RedHat6, RedHat7)
         self.P = args.P # project
         self.H = args.H # header
@@ -165,7 +170,6 @@ class Submitter():
         self.r = args.r # max retry
         self.R = args.R # randomize users
         self.W = args.W # max inactivity
-        self.g = args.g # group tasks
         self.v = args.v # verbose
         self.x = args.x # write and exit
         self.inactivity = time.time()
@@ -183,7 +187,7 @@ class Submitter():
         self.stat_cmd = 'qstat -g d -u {} | egrep -v "^job|^-"'.format(','.join(self.users + [self.me]))
         self.submit_cmd = 'qsub'
         self.parse_job = lambda x: re.search('Your job-array (\d+)', x).group(1)
-
+        
         # initialize job objects
         for command in args.commands:
             self.add_task(command)
@@ -226,12 +230,16 @@ class Submitter():
         task_ids = ','.join(map(str, sorted([task.task_id for task in tasks])))        
         
         # submit job
-        cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -l os=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, self.O, task_ids, self.P, array)
+        if self.n == 1:
+            cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -l os=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, self.O, task_ids, self.P, array)
+        else:
+            cmd = '%s -o %s -j y -l h_vmem=%sg -l h_rt=%s -pe smp %s -l os=%s -t %s -P %s %s' %(self.submit_cmd, error, m, t, self.n, self.O, task_ids, self.P, array)
         print(cmd)
         # hackish
         if self.x:
             quit()
         out = self.system(cmd, user=u)
+        time.sleep(.1)
         print(out)
         
         # update tasks
@@ -335,14 +343,20 @@ class Submitter():
         text = ', '.join(u) + '\n' + ', '.join(v)
         self.write_log(text)
         
-    
+
     def submit(self, x=[], wait=True, out=None, group=None):
+
+        # group tasks
+        if self.g > 0 and self.g < len(x):
+            len1 = len(x)
+            x = ['; '.join(x[i::self.g]) for i in range(self.g)]
+            print('Combined %d commands into %d groups' %(len1, len(x)))
         
         # add tasks/commands
         for xi in x:
             self.add_task(xi)
         self.o = self.o if out is None else out
-        self.g = self.g if group is None else group
+        self.G = self.G if group is None else group
         
         if len(self.tasks) == 0:
             return []
@@ -368,7 +382,7 @@ class Submitter():
             tasks = self.group_tasks_by_status(self.tasks)['ready']
             
             # split into resource groups
-            if self.g == True:
+            if self.G == True:
                 groups = self.group_tasks_by_resources(tasks)
             else:
                 groups = dict(list(zip(list(range(len(tasks))), [[task] for task in tasks])))
@@ -525,13 +539,11 @@ if __name__ == '__main__':
 
     # initialize new task submitter
     submitter = Submitter()
-
+    
     # add commands from stdin
-    for line in sys.stdin.readlines():
-        command = line.rstrip()
-        submitter.add_task(command)
-
+    commands = [line.rstrip() for line in sys.stdin.readlines()]
+    
     # submit jobs
-    submitter.submit()
+    submitter.submit(commands)
 
 

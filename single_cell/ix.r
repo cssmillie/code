@@ -65,7 +65,7 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE
     
     # Read interactions
     if(is.null(ix)){
-        ix = read.table('~/aviv/db/fantom/PairsLigRec.txt', sep='\t', header=T, stringsAsFactors=F, comment.char='', quote='')
+        ix = read.table('~/code/single_cell/PairsLigRec.txt', sep='\t', header=T, stringsAsFactors=F, comment.char='', quote='')
 	ix = ix[ix[,'Pair.Evidence'] == 'literature supported',]
 	ix = ix[,c('Ligand.ApprovedSymbol', 'Receptor.ApprovedSymbol')]
 	colnames(ix) = c('lig', 'rec')
@@ -154,7 +154,7 @@ make_edges = function(data, diff=NULL, weights=NULL, ix=NULL, do.intersect=FALSE
 }
 
 
-permute_edges = function(edges, perm.col='ident'){
+permute_edges = function(edges, perm.col='ident', groups=NULL){
     require(data.table)
     
     # Get column to permute
@@ -165,17 +165,30 @@ permute_edges = function(edges, perm.col='ident'){
         perm.l = 'lig'
 	perm.r = 'rec'
     }
-    
+
+    # Do shuffle within groups
+    if(is.null(groups)){groups = list(unique(c(edges[[perm.l]], edges[[perm.r]])))}
+        
     # Permute ligands
     map = unique(edges[,.(lcell, lig)])
-    new = smart_shuffle(map, perm.l, c('lcell', 'lig'))
+    new = map
+    for(g in groups){
+        i = map$lcell %in% g
+	new[i] = smart_shuffle(map[i], perm.l, c('lcell', 'lig'))
+    }
+    #new = smart_shuffle(map, perm.l, c('lcell', 'lig'))
     map[,new_lcell := new$lcell]
     setkeyv(map, c('lcell', 'lig'))
     edges$lcell = map[edges[,.(lcell, lig)], new_lcell]
     
     # Permute receptors
     map = unique(edges[,.(rcell, rec)])
-    new = smart_shuffle(map, perm.r, c('rcell', 'rec'))
+    new = map
+    for(g in groups){
+        i = map$rcell %in% g
+	new[i] = smart_shuffle(map[i], perm.r, c('rcell', 'rec'))
+    }
+    #new = smart_shuffle(map, perm.r, c('rcell', 'rec'))
     map[,new_rcell := new$rcell]
     setkeyv(map, c('rcell', 'rec'))
     edges$rcell = map[edges[,.(rcell, rec)], new_rcell]
@@ -185,7 +198,7 @@ permute_edges = function(edges, perm.col='ident'){
 }
 
 
-edges2graph = function(edges, filter_fxn=identity, symm=TRUE, unique=TRUE, node_order=NULL, permute=FALSE, perm.col='ident'){
+edges2graph = function(edges, filter_fxn=identity, symm=TRUE, unique=TRUE, node_order=NULL, permute=FALSE, perm.col='ident', groups=NULL){
     require(data.table)
     
     # Convert edgelist to adjacency matrix
@@ -193,6 +206,7 @@ edges2graph = function(edges, filter_fxn=identity, symm=TRUE, unique=TRUE, node_
     # filter = function for filtering edges
     # symm = make graph symmetric by: x = x + t(x)
     # unique = count unique ligands and receptors
+    # groups = list(c(ident1, ident2, ident3), c(ident4, ident5), ...) shuffles ligands within cell groups
     
     # Check formatting
     edges = as.data.table(edges)
@@ -202,7 +216,7 @@ edges2graph = function(edges, filter_fxn=identity, symm=TRUE, unique=TRUE, node_
     
     # Permute ligands and receptors
     if(permute == TRUE){
-        edges = permute_edges(edges, perm.col=perm.col)
+        edges = permute_edges(edges, perm.col=perm.col, groups=groups)
     }
     
     # Filter edges
@@ -296,3 +310,13 @@ matrix_qvals = function(graph, shuf, type='gt', n=100, pvals=c(0, 1e-5, 5e-5, 1e
     return(list(pvals=pvals, num=num, fdr=fdr))
 }
 
+fast_ix = function(data){
+
+    # data = matrix(1=ident, 2=gene) = cell type markers
+    edges = make_edges(data)
+    graph = edges2graph(edges)
+    shuffled_graphs = lapply(1:100, function(i) edges2graph(edges, permute=T))
+    pvals = matrix_pvals(graph, shuffled_graphs)
+    d = pvals < .05
+    nice_network(d)
+}

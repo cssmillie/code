@@ -14,8 +14,15 @@ parser.add_argument('--regex', help='Regex to build sample names')
 parser.add_argument('--join', help='String to join groups with', default='')
 parser.add_argument('--cells', help='Number of expected cells', default=None, type=int)
 parser.add_argument('--cloud', help='Copy data to google cloud', default=False, action='store_true')
+parser.add_argument('--txt', help='Tab-delimited output', default=False, action='store_true')
 parser.add_argument('--out', help='Output file (samples.txt)', default='')
 args = parser.parse_args()
+
+# Get delimiter
+if args.txt:
+    delim = '\t'
+else:
+    delim = ','
 
 def get_cpath(fn):
     # get path on google cloud
@@ -29,11 +36,14 @@ if args.cloud:
 # Get forward and reverse reads
 fwd = sorted(glob.glob('%s/*/*/*R1*fastq.gz' %(args.data)))
 rev = sorted(glob.glob('%s/*/*/*R2*fastq.gz' %(args.data)))
-if args.out:
-    out = open(args.out, 'w')
-    out.write('Cell,Plate,Read1,Read2\n')
-else:
-    print('Cell,Plate,Read1,Read2\n')
+
+# Write header
+if not args.txt:
+    if args.out:
+        out = open(args.out, 'w')
+        out.write('Cell,Plate,Read1,Read2\n')
+    else:
+        print('Cell,Plate,Read1,Read2')
 
 # Get sample names
 for i in range(len(fwd)):
@@ -44,7 +54,10 @@ for i in range(len(fwd)):
         Fi = get_cpath(fi)
         Ri = get_cpath(ri)
     name = args.join.join(re.search(args.regex, fi).groups())
-    line = '%s,%s,%s,%s' %(name, 'plate', Fi, Ri)
+    if args.txt:
+        line = '%s\t%s\t%s' %(name, Fi, Ri)
+    else:
+        line = '%s,%s,%s,%s' %(name, 'plate', Fi, Ri)
     if args.out:
         out.write(line + '\n')
     else:

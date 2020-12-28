@@ -1,3 +1,4 @@
+library(Matrix)
 
 
 mem_cbind = function(M){
@@ -106,7 +107,7 @@ fast_cnorm = function(x){
 
 
 mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barcodes.tsv'){
-
+    
     # Get sparse matrix filenames from prefix and patterns
     
     # Get prefix
@@ -115,7 +116,7 @@ mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barc
     
     # Fix names
     prefix = gsub('//', '/', prefix)
-    prefix = gsub('\\.\\.', '.', prefix)
+    #prefix = gsub('\\.\\.', '.', prefix)
     prefix = gsub('/\\.', '/', prefix)
     
     # Get filenames
@@ -123,6 +124,16 @@ mtx_filenames = function(prefix, data='matrix.mtx', rows='genes.tsv', cols='barc
     if(!file.exists(rows)){rows = paste0(prefix, rows)}
     if(!file.exists(cols)){cols = paste0(prefix, cols)}
     
+    # Check gunzip extension
+    if(!file.exists(data)){data = paste0(data, '.gz')}
+    if(!file.exists(rows)){rows = paste0(rows, '.gz')}
+    if(!file.exists(cols)){cols = paste0(cols, '.gz')}
+
+    # Remove gunzip extension
+    if(!file.exists(data)){data = gsub('\\.gz', '', data)}
+    if(!file.exists(rows)){rows = gsub('\\.gz', '', rows)}
+    if(!file.exists(cols)){cols = gsub('\\.gz', '', cols)}
+
     return(list(data=data, rows=rows, cols=cols))
 }
 
@@ -131,6 +142,12 @@ read_mtx = function(prefix, data='matrix.mtx', rows='features.tsv', cols='barcod
 
     # Get filenames
     fns = mtx_filenames(prefix=prefix, data=data, rows=rows, cols=cols)
+    print(fns)
+    
+    # Fix 10X inconsistencies
+    if(!all(sapply(fns, file.exists))){
+        fns = mtx_filenames(prefix=prefix, data=data, rows='genes.tsv', cols='barcodes.tsv')
+    }
     data = fns$data
     rows = fns$rows
     cols = fns$cols
@@ -138,19 +155,100 @@ read_mtx = function(prefix, data='matrix.mtx', rows='features.tsv', cols='barcod
     # Read data
     print(paste('Reading', data))
     data = readMM(data)
-    rows = read.table(rows, sep='\t')
-    # Fix 10X's new file format
-    rows = rows[,sapply(rows, function(a) ! all(a == 'Gene Expression')),drop=F]
-    rows = rows[,ncol(rows)]
-    cols = read.table(cols)
-    cols = cols[,ncol(cols)]
     print(dim(data))
+    rows = read.table(rows, sep='\t', stringsAsFactors=F, quote='', comment.char='')
+    
+    # Fix 10X inconsistencies
+    if(ncol(rows) > 1){
+        rows = rows[,sapply(rows, function(a) ! all(a == 'Gene Expression')),drop=F]
+	rows = rows[,ncol(rows)]
+    } else {
+        rows = rows[,1]
+    }
+    print(length(rows))
+    
+    cols = read.table(cols, stringsAsFactors=F)
+    if(ncol(cols) > 1){
+        cols = cols[,ncol(cols)]
+    } else {
+        cols = cols[,1]
+    }
+    print(length(cols))
     
     # Filter matrix
-    if(filter == TRUE){print('read_mtx: filtering'); j = colSums(data > 0) >= 10; data = data[,j]; cols=cols[j]}
+    if(filter == TRUE){
+        print('read_mtx: minimal filtering (requiring at least 10 genes per cell)')
+	j = colSums(data > 0) >= 10
+	data = data[,j]
+	cols = cols[j]
+    }
     
     # Set names
-    if(fix_duplicates == TRUE){print('read_mtx: fixing duplicate rownames'); data = as(rowsum(as.matrix(data), rows), 'sparseMatrix')} else {rownames(data) = rows}
+    if(fix_duplicates == TRUE){
+        print('read_mtx: fixing duplicate rownames')
+	data = as(rowsum(as.matrix(data), rows), 'sparseMatrix')
+    } else {
+        rownames(data) = rows
+    }
+    colnames(data) = cols
+    
+    return(data)
+}
+
+
+read_mtx2 = function(prefix, filter=FALSE, fix_duplicates=FALSE){
+    
+    # Get filenames
+    fns = list.files(pattern=prefix)
+    data = grep('matrix', fns, value=T)
+    rows = grep('genes|features', fns, value=T)
+    cols = grep('barcodes', fns, value=T)
+    
+    # Read data
+    print(paste('Reading', data))
+    data = readMM(data)
+    if(grepl('csv', rows)){rsep=','} else {rsep='\t'}
+    if(grepl('csv', cols)){csep=','} else {csep='\t'}
+    rows = read.table(rows, sep=rsep, stringsAsFactors=F, quote='', comment.char='', header=F)
+    cols = read.table(cols, sep=csep, stringsAsFactors=F, quote='', comment.char='', header=F)
+    
+    # Select column with most unique entries
+    if(ncol(rows) > 1){
+        rows = rows[,which.max(apply(rows, 2, function(a) length(unique(a))))]
+    }
+    if(ncol(cols) > 1){
+        cols = cols[,which.max(apply(cols, 2, function(a) length(unique(a))))]
+    }
+
+    # Switch rows and columns if needed
+    if(abs(length(rows) - nrow(data)) > (length(cols) - nrow(data))){
+        print('Switching rows and columns')
+	data = t(data)
+    }
+    
+    # Smart alignment
+    if((length(rows) - 1) == nrow(data)){
+        rows = rows[2:length(rows)]
+    }
+    if((length(cols) - 1) == ncol(data)){
+        cols = cols[2:length(cols)]
+    }    
+    
+    # Filter matrix
+    if(filter == TRUE){
+        print('read_mtx: minimal filtering (requiring at least 10 genes per cell)')
+	j = colSums(data > 0) >= 10
+	data = data[,j]
+	cols = cols[j]
+    }
+    
+    # Set names
+    if(fix_duplicates == TRUE){
+        print('read_mtx: fixing duplicate rownames')
+	data = as(rowsum(as.matrix(data), rows), 'sparseMatrix')
+    } else {
+        rownames(data) = rows
+    }
     colnames(data) = cols
     
     return(data)
@@ -173,4 +271,56 @@ write_mtx = function(x, prefix='.', data='matrix.mtx', rows='genes.tsv', cols='b
 
     # Return filenames
     list(data=data, rows=rows, cols=cols)
+}
+
+
+colMeans_drop0 = function(x){
+  n = diff(x@p)
+  n[n == 0] = 1
+  setNames(colSums(x) / n, 1:ncol(x))
+}
+
+
+rowMeans_drop0 = function(x){
+  i = x@i + 1
+  n = tabulate(i)
+  n[n == 0] = 1
+  setNames(rowSums(x) / n, 1:nrow(x))
+}
+
+
+align_mtx = function(x, rows.use=NULL, cols.use=NULL, by_row=TRUE, by_col=TRUE, missing=NA){
+
+    # align a list of matrices by rows and/or columns
+    # -----------------------------------------------
+
+    # get row and column names
+    if(is.null(rows.use)){
+        rows.use = sort(unique(unlist(lapply(x, rownames))))
+    }
+    if(is.null(cols.use)){
+        cols.use = sort(unique(unlist(lapply(x, colnames))))
+    }
+    
+    # check if all matrices are sparse
+    sparse = all(sapply(x, function(a) is(a, 'sparseMatrix')))
+    
+    # align matrices along rows/columns
+    y = lapply(x, function(xi){
+        if(! by_row){rows.use = rownames(xi)}
+	if(! by_col){cols.use = colnames(xi)}
+	if(sparse == TRUE){
+	    yi = Matrix(missing, nrow=length(rows.use), ncol=length(cols.use), sparse=TRUE)
+	    rownames(yi) = rows.use
+	    colnames(yi) = cols.use
+	    yi[rownames(xi), colnames(xi)] = as(xi, 'sparseMatrix')
+	} else {
+	    yi = matrix(missing, nrow=length(rows.use), ncol=length(cols.use))
+	    rownames(yi) = rows.use
+	    colnames(yi) = cols.use
+	    yi[rownames(xi), colnames(xi)] = as.matrix(xi)
+	}
+	yi
+    })
+    y
 }

@@ -1,3 +1,4 @@
+
 require(ggplot2)
 require(ggrepel)
 require(gtools)
@@ -43,6 +44,31 @@ rescale_vector = function(x, target=c(0,1), f=identity, abs=FALSE){
 }										
 
 
+subsample_points = function(coords, k, nbins=25, bin_type='size'){
+    
+    # Evenly subsample points across multiple axes
+    # - coords = data.frame(x1=axis1, x2=axis2, ...)
+    # - k = number of points to subsample
+    # - nbins = number of bins per axis
+    # - bin_type = 'size' (equal size) or 'freq' (equal frequency)
+    # For example, splits an xy plot into boxes and samples points from each box
+    # Return: TRUE/FALSE vector for each row of coords
+    
+    # Divide points into bins
+    if(bin_type == 'size'){
+        g = interaction(lapply(coords, cut, breaks=nbins))
+    } else if(bin_type == 'freq'){
+        g = interaction(lapply(coords, cut2, g=nbins))
+    } else {
+        print("Error: ! bin_type %in% c('size', 'freq')")
+    }
+    
+    # Subsample points from each bin
+    i = as.integer(simple_downsample(1:nrow(coords), groups=g, total_cells=k))
+    1:nrow(coords) %in% i
+}
+
+
 load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL){
     if(!file.exists(file)){file = paste0('~/aviv/db/markers/', file, '.txt')}
     sig = read.table(file, stringsAsFactors=F, row.names=1)
@@ -54,24 +80,27 @@ load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL){
 
 
 plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL, meta=NULL, regex=NULL, files=NULL, file.cols=NULL, file.regex=NULL, top=NULL, ident=TRUE, data.use='log2',
-                     combine_genes='mean', cells.use=NULL, ymin=0, ymax=1, num_col='auto', pt.size=.75, font.size=11, do.label=T, label.size=5, do.title=TRUE, title.use=NULL, pal=NULL,
-	             do.legend=TRUE, legend.title='log2(TPM)', share_legend=FALSE, legend_width=.05, legend.cols=NULL, vmin=NA, vmax=NA, na.value='transparent', out=NULL, nrow=1.5, ncol=1.5, ...){
+                     combine_genes='mean', cells.use=NULL, ymin=0, ymax=1, num_col='auto', pt.size=.75, font.size=11, do.label=T, label.size=5, do.title=TRUE, title.use=NULL, dpal=NULL, cpal=NULL,
+	             do.legend=TRUE, legend.title='log2(TP10K+1)', share_legend=FALSE, share_legend_rescale=TRUE, legend.size=1, legend_width=.05, legend.cols=NULL, vmin=NA, vmax=NA,
+		     na.value='transparent', out=NULL, nrow=1.5, ncol=1.5, return_plotlist=FALSE, ds_cells=NULL, agg.ident=FALSE, do.sort=FALSE, ...){
     
     
     # TSNE coordinates
     if(is.null(coords)){
         d = structure(seur@tsne.rot[,1:2], names=c('x', 'y'))
     } else {
+        colnames(coords) = c('tSNE_1', 'tSNE_2')
+	rownames(coords) = colnames(seur@data)
         d = structure(as.data.frame(coords[,1:2]), names=c('x', 'y'))
     }
-    
+        
     # Cell identities
     if(!is.logical(ident)){
         d$Identity = ident
     } else if(ident & !is.null(seur)){
         d$Identity = seur@ident
     }
-
+        
     # Cell scores
     if(!is.null(cells.use)){cells.use = intersect(cells.use, rownames(d))}
     scores = score_cells(seur=seur, data=data, meta=meta, names=names, regex=regex, files=files, file.cols=file.cols, file.regex=file.regex, top=top, scores=scores,
@@ -79,11 +108,30 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     if(!is.null(scores)){
         i = intersect(rownames(d), rownames(scores))
 	ni = c(names(d), names(scores))
-	d = cbind.data.frame(d[i,], scores[i,])
+	d = cbind.data.frame(d[i,], scores[i,], stringsAsFactors=F)
 	colnames(d) = ni
     }
-        
+    
+    if(agg.ident == TRUE){
+        j = setdiff(colnames(d), c('x', 'y', 'Identity'))
+        d[,j] = apply(d[,j,drop=F], 2, function(a){
+	    ave(a, seur@ident, FUN=function(b){
+	        if(is.character(b) | is.factor(b)){names(sort(table(b), dec=T))[[1]]} else{mean(b, na.rm=T)}
+	    })
+	})
+    }
+    
     # Subset cells
+    if(is.null(cells.use)){
+        cells.use = rownames(d)
+    }
+    if(!is.null(ds_cells)){
+        print(paste('Downsampling', ds_cells, 'cells evenly across xy-grid'))
+        i = subsample_points(coords=d[,1:2], k=ds_cells)
+	cells.use = cells.use[i]
+	print(paste('Selected', length(cells.use), 'cells'))
+    }
+    
     if(is.null(cells.use)){cells.use = rownames(d)}
     d = data.frame(d[cells.use,])
         
@@ -95,7 +143,7 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     d = d[sample(1:nrow(d)),]
     
     # Get limits for shared legend
-    if(share_legend == TRUE){
+    if(share_legend == TRUE & share_legend_rescale == TRUE){
         j = names(which(sapply(subset(d, select=-c(x,y)), is.numeric)))
 	cat('\nShared limits:', paste(j, collapse=', '), '\n')
         if(is.na(vmin)){vmin = na.omit(min(d[,j]))}
@@ -107,14 +155,26 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 
         # plot NAs first
         d = d[c(which(is.na(d[,col])), which(!is.na(d[,col]))),]
-	    	
+
+	# order points by value
+	if(do.sort == TRUE){
+	    d = d[order(d[,col]),]
+	}
+	
 	if(is.numeric(d[,col])){
 		    
 	    # Continuous plot
+
+	    # Get colors
+	    if(!is.null(cpal)){
+	        if(length(cpal) == 1){cont.colors = brewer.pal(9, cpal)} else {cont.colors = cpal}
+	    } else {
+	        cont.colors = material.heat(50)
+	    }
 	    d[,col] = qtrim(d[,col], qmin=ymin, qmax=ymax)
 	    p = ggplot(d) +
 	        geom_point(aes_string(x='x',y='y',colour=col), size=pt.size, ...) +
-		scale_colour_gradientn(colours=material.heat(50), guide=guide_colourbar(barwidth=.5, title=legend.title), na.value=na.value, limits=c(vmin, vmax)) + 
+		scale_colour_gradientn(colours=cont.colors, guide=guide_colourbar(barwidth=.5, title=legend.title), na.value=na.value, limits=c(vmin, vmax)) + 
 		theme_cowplot(font_size=font.size) +
 		xlab('TSNE 1') + ylab('TSNE 2')
 		
@@ -123,14 +183,28 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 	    # Discrete plot
 
 	    # Get colors
-	    if(do.label == TRUE){tsne.colors = set2.colors} else {tsne.colors = set2.colors}
-	    if(!is.null(pal)){tsne.colors = pal}
+	    if(do.label == TRUE){disc.colors = set2.colors} else {disc.colors = set2.colors}
+	    if(!is.null(dpal)){
+	        if(is.null(names(dpal))){
+		    # use alternative color palette
+		    disc.colors = dpal
+		} else {
+		    # if named palette, then map each name to groups of "similar" colors
+		    groups = sapply(names(dpal), function(a) grep(a, levels(d[,col]), value=T))
+		    groups = groups[lengths(groups) > 0]
+		    dpal = setNames(sapply(1:length(groups), function(i) nice_colors(n=length(groups[[i]]), col=dpal[[i]], type='single')), names(groups))
+		    dpal = unlist(lapply(names(dpal), function(a){b = intersect(levels(d[,col]), groups[[a]]); setNames(dpal[[a]], b)}))
+		    dpal = dpal[as.character(levels(d[,col]))]
+		    disc.colors = dpal
+		}
+	    }
+	    if(! is.factor(d[,col])){d[,col] = factor(d[,col], levels=naturalsort(unique(d[,col])))}
 	    
 	    p = ggplot(d) +
 	        geom_point(aes_string(x='x',y='y',colour=col), size=pt.size, ...) +
 		theme_cowplot(font_size=font.size) +
 		xlab('TSNE 1') + ylab('TSNE 2') +
-		scale_colour_manual(values=tsne.colors, na.value=na.value, drop=F) + 
+		scale_colour_manual(values=disc.colors, na.value=na.value, drop=F) + 
 		theme(panel.border = element_blank(), panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
 		guides(colour=guide_legend(ncol=legend.cols, title=legend.title))
 	    
@@ -147,7 +221,7 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 	}
 	if(do.legend == FALSE){p = p + theme(legend.position='none')}
 	if(legend.title == ''){p = p + theme(legend.title=element_blank())}
-
+	
 	ps[[col]] = p
     }
     
@@ -169,13 +243,15 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     } else {
         save_plot(file=out, p, nrow=nrow, ncol=ncol)
     }
+    
+    if(return_plotlist == TRUE){return(ps)} else {return(p)}
 }
 
 
-make_compact = function(plotlist, num_col, labels=TRUE, ticks=TRUE){
+make_compact2 = function(plotlist, num_col, labels=TRUE, ticks=TRUE){
     
     # Make a "plot_grid" plotlist compact by removing axes from interior plots
-
+    
     # x-axis
     if(length(plotlist) > num_col){
         i = setdiff(1:length(plotlist), rev(1:length(plotlist))[1:min(num_col, length(plotlist))])
@@ -194,7 +270,49 @@ make_compact = function(plotlist, num_col, labels=TRUE, ticks=TRUE){
 }
 
 
-share_legend = function(plotlist, num_col, rel_widths=NULL, width=.1){
+make_compact = function(plotlist, num_col, xlab='b', ylab='l', title=NULL){
+    
+    # Make a "plot_grid" plotlist compact by removing axes from interior points
+    
+    # Calculate plot indices
+    ntot = length(plotlist)
+    ncol = min(ntot, num_col)
+    indices = list(
+        't' = 1:ncol,
+	'r' = which(1:ntot %% ncol == 0),
+	'b' = rev(1:ntot)[1:ncol],
+	'l' = which(1:ntot %% ncol == 1),
+	'a' = 1:ntot
+    )
+    if(ntot == 1){indices[['l']] = 1}    
+    
+    # Get directions
+    xlab = strsplit(xlab, '')[[1]]
+    ylab = strsplit(ylab, '')[[1]]
+    if(!is.null(title)){title = strsplit(title, '')[[1]]}
+
+    # Fix xlab
+    i = setdiff(1:ntot, unlist(indices[xlab]))
+    plotlist[i] = lapply(plotlist[i], function(p) p + theme(axis.text.x=element_blank(), axis.title.x=element_blank()))
+
+    # Fix ylab
+    i = setdiff(1:ntot, unlist(indices[ylab]))
+    plotlist[i] = lapply(plotlist[i], function(p) p + theme(axis.text.y=element_blank(), axis.title.y=element_blank()))
+    
+    # Fix title
+    if(!is.null(title)){
+        i = setdiff(1:ntot, unlist(indices[title]))
+        plotlist[i] = lapply(plotlist[i], function(p) p + theme(plot.title=element_blank()))
+    }
+    
+    return(plotlist)
+    
+}
+
+
+share_legend = function(plotlist, num_col, rel_widths=NULL, width=.1, align='hv'){
+
+    # align = 'hv' makes plots identical sizes (but adds whitespace)
     
     # Get first legend in plotlist
     i = min(which(sapply(plotlist, function(p) 'guide-box' %in% ggplotGrob(p)$layout$name)))
@@ -206,7 +324,7 @@ share_legend = function(plotlist, num_col, rel_widths=NULL, width=.1){
     
     # Make combined plot
     if(is.null(rel_widths)){rel_widths = rep(1, length(plotlist))}
-    p = plot_grid(plotlist=plotlist, ncol=num_col, align='h', rel_widths=rel_widths)
+    p = plot_grid(plotlist=plotlist, ncol=num_col, align=align, rel_widths=rel_widths)
     p = plot_grid(p, legend, ncol=2, rel_widths=c(1-width, width))
     
     return(p)
@@ -270,9 +388,9 @@ heatmap2 = function(x, col='nmf', lmat=NULL, lwid=NULL, lhei=NULL, margins=c(5,5
 
 
 ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=FALSE, ysec=FALSE, xstag=FALSE, xstag_space=.15, ystag=FALSE, ystag_space=.15, title='', legend.title='',
-                     pal='nmf', do.legend=TRUE, font_size=7, 
-                     out=NULL, nrow=1.25, ncol=1.25, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, symm=FALSE, xstrip=NULL, ystrip=NULL, hclust_met='complete', border='#cccccc', replace_na=NA,
-		     labRow=NULL, labCol=NULL, ret.order=FALSE, ret.legend=FALSE, pvals=NULL, max_pval=1, pval_border='black', pval_width=.25){
+                     pal='nmf', do.legend=TRUE, font_size=7, groups=NULL,
+                     out=NULL, nrow=1.25, ncol=1.25, qmin=0, qmax=1, vmin=-Inf, vmax=Inf, symm=FALSE, hclust_met='complete', border='#cccccc', replace_na=NA,
+		     labRow=NULL, labCol=NULL, ret.order=FALSE, ret.legend=FALSE, pvals=NULL, max_pval=1, pval_border='black', pval_width=.25, na.value='#cccccc'){
     
     require(ggplot2)
     require(tidyr)
@@ -280,6 +398,8 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     require(tibble)
     
     # Scale values
+    if(is.null(rownames(data))){rownames(data) = 1:nrow(data)}
+    if(is.null(colnames(data))){colnames(data) = 1:ncol(data)}
     data[is.na(data)] = replace_na
     data = qtrim(data, qmin=qmin, qmax=qmax, vmin=vmin, vmax=vmax)
     
@@ -287,6 +407,18 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     x = as.data.frame(data) %>% rownames_to_column('row') %>% gather(col, value, -row)
     x$value = as.numeric(x$value)
     
+    # Facet by group
+    if(!is.null(groups)){
+        # groups is a named list mapping each x or y value to a group
+	ri = sum(x$row %in% names(groups))
+	ci = sum(x$col %in% names(groups))
+	if(ri > ci){
+	    x$group = as.factor(groups[x$row])
+	} else {
+	    x$group = as.factor(groups[x$col])
+	}
+    }
+        
     # Merge data and p-values
     if(is.null(pvals)){
         x$pval = border
@@ -305,6 +437,7 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
 	x = as.data.frame(merge(as.data.table(x), as.data.table(pvals), by=c('row', 'col'), all.x=TRUE))
 	x$pval = ifelse(x$pval <= max_pval, pval_border, NA)
 	x$pval[is.na(x$pval)] = border
+	x = x[order(x$pval),]
     }
     
     # Order rows
@@ -341,39 +474,51 @@ ggheatmap = function(data, Rowv='hclust', Colv='hclust', xlab='', ylab='', xsec=
     }
     Rowv = rowv
     Colv = colv
-
+    
     # Set order of row and column labels
     x$row = factor(x$row, levels=Rowv)
     x$col = factor(x$col, levels=Colv)
     
     # Get odd/even indices
-    r1 = seq(1, length(Rowv), by=2)
-    r2 = seq(2, length(Rowv), by=2)
-    c1 = seq(1, length(Colv), by=2)
-    c2 = seq(2, length(Colv), by=2)
+    if(length(Rowv) > 1){
+        r1 = seq(1, length(Rowv), by=2)
+        r2 = seq(2, length(Rowv), by=2)
+    } else {
+        r1 = r2 = 1
+    }
+    if(length(Colv) > 1){
+        c1 = seq(1, length(Colv), by=2)
+        c2 = seq(2, length(Colv), by=2)
+    } else {
+        c1 = c2 = 1
+    }
     
     # Get plot data
     if(length(pal)==1){if(pal == 'nmf'){pal = rev(colorRampPalette(nmf.colors)(101))[10:101]} else {pal = colorRampPalette(brewer.pal(9, pal))(101)}}
     
     # Plot significant boxes last
     x = x[rev(order(x$pval != 'black')),]
-        
+    
     # Plot with geom_tile
     p = ggplot(x) +
         geom_tile(aes(x=as.numeric(col), y=as.numeric(row), fill=value), color=x$pval, size=pval_width) +
 	labs(x=xlab, y=ylab, title=title, fill=legend.title) +
 	theme_cowplot(font_size=font_size) +
 	theme(axis.text.x=element_text(angle=90, hjust=1, vjust=.5), axis.line=element_blank())
-    
+
+    if(!is.null(groups)){
+        p = p + facet_grid(group ~ ., scales='free', space='free')
+    }
+
     # Set scale
     if(is.infinite(vmin)){vmin = min(x$value)}
     if(is.infinite(vmax)){vmax = max(x$value)}
     limits = c(vmin, vmax)
     if(symm == TRUE){
         values = c(min(x$value), 0, max(x$value))
-	p = p + scale_fill_gradientn(colours=pal, values=scales::rescale(values))
+	p = p + scale_fill_gradientn(colours=pal, values=scales::rescale(values), na.value=na.value)
     } else {
-        p = p + scale_fill_gradientn(colours=pal, limits=limits)
+        p = p + scale_fill_gradientn(colours=pal, limits=limits, na.value=na.value)
     }
     
     # Secondary x-axis
@@ -536,10 +681,10 @@ plot_dots = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, r
         feats = colnames(x)[rev(order(apply(x, 2, which.max), -1*apply(x, 2, max)))]
     }
     
-    if(coord_flip == TRUE){
-        cells = rev(cells)
-	feats = rev(feats)
-    }
+    #if(coord_flip == TRUE){
+    #    cells = rev(cells)
+    #	feats = rev(feats)
+    #}
         
     # Re-scale dot size and color
     if(rescale == TRUE){
@@ -573,9 +718,11 @@ plot_dots = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL, r
 }
 
 
-plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FALSE, reorder=FALSE, replace_na=0, na.value='transparent', symm=FALSE, vmin=NULL, vmax=NULL, qmin=0, qmax=1, max_size=5,
-                      fill_title='', size_title='', Rowv=NULL, Colv=NULL, pal=rev(brewer.pal(7, 'RdBu')), out=NULL, nrow=1, ncol=1, coord_flip=FALSE, sig_only=TRUE, xlab='', ylab='', font_size=10,
-		       pvals=NULL){
+plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FALSE, replace_na=0, na.value='transparent', symm=FALSE, vmin=NULL, vmax=NULL, qmin=0, qmax=1,
+                      smin=NULL, smax=NULL, max_size=5,
+                      size_title='Fraction of\nexpressing cells', fill_title='Mean non-zero\nexpression\nlog2(TP10K+1)', pval_title='',
+		      Rowv='none', Colv='none', pal=rev(brewer.pal(7, 'RdBu')), out=NULL, nrow=1, ncol=1,
+		      coord_flip=FALSE, sig_only=TRUE, xlab='', ylab='', font_size=10, pvals=NULL){
     
     # input arguments
     # x1 = size matrix or list(row, col, size)
@@ -597,6 +744,7 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
     }
     if(!is.null(x1)){
         if(! all(c('row', 'col', 'size') %in% colnames(x1))){
+	    x1 = as.data.frame(x1)
 	    cnames = rev(colnames(x1))
 	    x1 = x1 %>% rownames_to_column('row')
 	    x1$row = factor(x1$row, levels=x1$row)
@@ -607,6 +755,7 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
     }
     if(!is.null(y1)){
         if(! all(c('row', 'col', 'color') %in% colnames(y1))){
+	    y1 = as.data.frame(y1)
 	    cnames = rev(colnames(y1))
 	    y1 = y1 %>% rownames_to_column('row')
 	    y1$row = factor(y1$row, levels=y1$row)
@@ -617,6 +766,7 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
     }
     if(!is.null(x2)){
         if(! all(c('row', 'col', 'size') %in% colnames(x2))){
+	    x2 = as.data.frame(x2)
 	    cnames = rev(colnames(x2))
 	    x2 = x2 %>% rownames_to_column('row')
 	    x2$row = factor(x2$row, levels=x2$row)
@@ -629,6 +779,7 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
     }
     if(!is.null(y2)){
         if(! all(c('row', 'col', 'color') %in% colnames(y2))){
+	    y2 = as.data.frame(y2)
 	    cnames = rev(colnames(y2))
 	    y2 = y2 %>% rownames_to_column('row')
 	    y2$row = factor(y2$row, levels=y2$row)
@@ -658,50 +809,63 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
         
     }
     d = as.data.table(d)
+    print(d)
+
+    # Get row and column orders
+    if(length(Rowv) > 1){rowv = Rowv; Rowv = 'Rowv'} else {rowv = levels(as.factor(d$row))}
+    if(length(Colv) > 1){colv = rev(Colv); Colv = 'Colv'} else {colv = rev(levels(as.factor(d$col)))}
         
-    if(reorder != FALSE){
-        if(! reorder %in% c('size', 'color', 'size2', 'color2')){stop('reorder != FALSE,size,color,size2,color2 - must specify attribute to use')}
-	u = d[,.SD[which.max(abs(color)),row],col]
-	Colv = u[order(factor(u[,V1], levels=Rowv)),col]
+    if(Rowv == 'auto'){
+        u = d[, .SD[which.max(abs(color)), col], row]
+	rowv = rev(u[order(factor(u[,V1], levels=colv)), row])
     }
-    
-    if(!is.null(Rowv)){
-	d = d[d$row %in% Rowv]
-        d$row = factor(d$row, levels=Rowv)
+
+    if(Colv == 'auto'){
+        u = d[, .SD[which.max(abs(color)), row], col]
+	colv = u[order(factor(u[,V1], levels=rowv)), col]
     }
-    if(!is.null(Colv)){
-	d = d[d$col %in% Colv,]
-        d$col = factor(d$col, levels=rev(Colv))
-    }
+
+    d = d[d$row %in% rowv][d$col %in% colv]
+    d$row = factor(d$row, levels=rowv)
+    d$col = factor(d$col, levels=rev(colv))
+    print(d$col)
     
     # get palette
     if(length(pal) == 1){pal = brewer.pal(7, pal)}
     ci = c(d$color, d$color2)    
+    si = c(d$size, d$size2)
     if(is.null(vmin)){vmin = min(ci, na.rm=T)}
     if(is.null(vmax)){vmax = max(ci, na.rm=T)}
+    if(is.null(smin)){smin = min(si, na.rm=T)}
+    if(is.null(smax)){smax = max(si, na.rm=T)}
     d$color = qtrim(d$color, vmin=vmin, vmax=vmax, qmin=qmin, qmax=qmax)
     d$color2 = qtrim(d$color2, vmin=vmin, vmax=vmax, qmin=qmin, qmax=qmax)
+    d$size = qtrim(d$size, vmin=smin, vmax=smax)
+    d$size2 = qtrim(d$size2, vmin=smin, vmax=smax)
     border1 = ifelse(d$order, '#000000', '#999999')
     border2 = ifelse(d$order, '#999999', '#000000')
     d$sig = 'P > .05'
     
     # add p-values
     if(!is.null(pvals)){
-        pvals$row = make.names(pvals$row)
-	pvals$col = make.names(pvals$col)
+	colnames(pvals) = c('row', 'col')
+        #pvals$row = make.names(pvals$row)
+	#pvals$col = make.names(pvals$col)
+	pvals$row = as.character(pvals$row)
+	pvals$col = as.character(pvals$col)
         setkeyv(d, c('row', 'col'))
         d[pvals[,.(row, col)], 'sig'] = 'P <= .05'
 	d$sig = factor(d$sig, levels=c('P <= .05', 'P > .05'))
-	p = ggplot(d) + geom_point(aes(x=col, y=row, size=size, fill=as.numeric(color), color=sig), pch=21, stroke=.25) + scale_color_manual('', values=c('black', 'grey'))
+	p = ggplot(d) + geom_point(aes(x=col, y=row, size=size, fill=as.numeric(color), color=sig), pch=21, stroke=.5) + scale_color_manual(pval_title, values=c('black', 'grey'))
     } else {
         p = ggplot(d) + geom_point(aes(x=col, y=row, size=size, fill=as.numeric(color)), pch=21, color=border1, stroke=.25)
     }
     
-    p = p + theme_cowplot() + xlab(xlab) + ylab(ylab) +
-	scale_size_area(size_title, max_size=max_size) +
+    p = p + theme_cowplot(font_size=font_size) + xlab(xlab) + ylab(ylab) +
+	scale_size_area(size_title, max_size=max_size, limits=c(smin, smax)) +
 	theme(panel.grid.major=element_line(colour='black'), axis.text.x=element_text(angle=-45, hjust=0, vjust=.5)) + panel_border() + background_grid(major='xy') 
     
-    if(any(d$size2 != 0)){p = p + geom_point(aes(x=col, y=row, size=size2, fill=as.numeric(color2)), pch=21, color=border2, stroke=.25)}
+    if(any(d$size2 != 0) & any(d$size1 != d$size2)){p = p + geom_point(aes(x=col, y=row, size=size2, fill=as.numeric(color2)), pch=21, color=border2, stroke=.25)}
     
     if(symm == TRUE){
         values = c(vmin, 0, vmax)
@@ -710,9 +874,9 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
         p = p + scale_fill_gradientn(fill_title, colours=pal, na.value=na.value, limits=c(vmin, vmax))
     }
     if(coord_flip == TRUE){print('flip')
-        p = p + coord_flip() + scale_x_discrete(limits=rev(levels(d$row))) + scale_y_discrete(limits=rev(levels(d$col)))
+	p = p + scale_x_discrete(limits=levels(d$col)) + scale_y_discrete(limits=levels(d$row)) + coord_flip()
     } else {
-        p = p + scale_x_discrete(limits=levels(d$col)) + scale_y_discrete(limits=levels(d$row))
+        p = p + scale_x_discrete(limits=rev(levels(d$col))) + scale_y_discrete(limits=rev(levels(d$row)))
     } 
     if(!is.null(out)){
         save_plot(p, file=out, nrow=nrow, ncol=ncol)
@@ -722,11 +886,33 @@ plot_dots2 = function(x1=NULL, y1=NULL, x2=NULL, y2=NULL, de=NULL, big_first=FAL
 }
 
 
+plot_dots3 = function(seur, genes.use, ident.use=NULL, order='auto', Colv=NULL, drop_zeros=T, cells.use=NULL, ...){
+    
+    # fix input arguments
+    if(is.null(ident.use)){ident.use = seur@ident}
+    
+    # expression stats
+    alpha = score_cells(seur, genes.use, groups=ident.use, group_stat='alpha', drop_zeros=drop_zeros, cells.use=cells.use)
+    mu = score_cells(seur, genes.use, groups=ident.use, group_stat='mu', drop_zeros=drop_zeros, cells.use=cells.use)
+    mean = score_cells(seur, genes.use, groups=ident.use, group_stat='mean', drop_zeros=drop_zeros, cells.use=cells.use)
+    
+    # order genes
+    if(is.null(Colv) & order == 'auto'){
+        Colv = order(apply(mean, 2, which.max), -apply(mean, 2, max))
+	Colv = colnames(mean)[Colv]
+    }
+    print(Colv)
+    
+    # make dotplot
+    plot_dots2(alpha, mu, alpha, mu, big_first=T, Colv=Colv, ...)
+}
+
+
 plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
                        regex=NULL, files=NULL, file.regex=NULL, file.cols=NULL, top=NULL, type='mean', group_by=NULL, color_by=NULL, pt.size=.25,
 	               do.facet=FALSE, facet_by=NULL, facet_genes=NULL, facet_formula=NULL, facet_scales='free_y', qmin=0, qmax=1, vmin=NULL, vmax=NULL, do.scale=FALSE, num_col='auto', resort=NULL,
-                       ident=TRUE, cells.use=NULL, do.title=TRUE, do.legend=FALSE, xlab='', ylab='log2(TP10K+1)', out=NULL, nrow=1.5, ncol=1.5, legend.title='Group',
-		       coord_flip=FALSE, alpha=1, order=NULL, font_size=10, do.pvals=FALSE, combine_genes='scale2', ret.data=FALSE,
+                       ident=TRUE, cells.use=NULL, do.title=TRUE, title.use=NULL, do.legend=FALSE, xlab='', ylab='log2(TP10K+1)', out=NULL, nrow=1.5, ncol=1.5, legend.title='Group',
+		       coord_flip=FALSE, alpha=1, order=NULL, font_size=10, do.pvals=FALSE, combine_genes='scale2', ret.data=FALSE, ds_cells=NULL, 
 		       mar=unit(c(6,6,6,6),'pt')){
     
     library(ggbeeswarm)
@@ -753,6 +939,15 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
     d = data.frame(Group=as.factor(group_by), Color=as.factor(color_by), Facet=as.factor(facet_by), row.names=colnames(seur@data))
     d = d[cells.use,,drop=F]
     if(coord_flip == TRUE){d$Group = factor(d$Group, levels=rev(levels(d$Group)))}
+
+    # Downsample cells
+    if(!is.null(ds_cells)){
+        print(paste('Downsampling', ds_cells, 'cells'))
+	print(table(d$Group))
+        cells.use = simple_downsample(cells=rownames(d), groups=d$Group, total_cells=ds_cells)
+	d = d[cells.use,,drop=F]
+	print(table(d$Group))
+    }
     
     # Cell scores
     scores = score_cells(seur=seur, data=data, meta=meta, scores=scores, names=names, regex=regex, files=files, top=top, file.regex=file.regex, file.cols=file.cols, cells.use=cells.use,
@@ -802,6 +997,7 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
     }
     
     # Violin plots
+    print(dim(d))
     for(col in setdiff(colnames(d), c('Group', 'Color', 'Facet', 'Value'))){ 
         
         # Convert to numeric?
@@ -834,7 +1030,11 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	    theme(axis.text.x = element_text(angle = -45, hjust = 0))
 	
 	if(do.title == TRUE){
-	    p = p + ggtitle(col)
+	    if(is.null(title.use)){
+	        p = p + ggtitle(col)
+	    } else {
+	        p = p + ggtitle(title.use)
+	    }
 	}
 
 	if(do.legend == FALSE){
@@ -855,13 +1055,21 @@ plot_violin = function(seur=NULL, names=NULL, scores=NULL, data=NULL, meta=NULL,
 	    
 	ps[[col]] = p
     }
-
-    if(num_col == 'auto'){
-        num_col = ceiling(sqrt(length(ps)))
+    
+    if(length(ps) > 1){
+    
+        if(num_col == 'auto'){
+            num_col = ceiling(sqrt(length(ps)))
+        }
+	if(do.facet == TRUE){
+            ps = make_compact(ps, num_col=num_col)
+	}
+	p = plot_grid(plotlist=ps, ncol=num_col)
+        p = p + theme(plot.margin=mar)
+    } else {
+        p = ps[[1]]
     }
-    ps = make_compact(ps, num_col=num_col)
-    p = plot_grid(plotlist=ps, ncol=num_col)
-    p = p + theme(plot.margin=mar)
+    
     if(!is.null(out)){
         save_plot(file=out, p, nrow=nrow, ncol=ncol)
     }
@@ -885,7 +1093,7 @@ plot_clusters = function(seur, ...){
 
 
 matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Frequency', value='mean', error='se', legend.title='Groups', colors='Paired', pos='dodge', border=NA,
-                          out=NULL, nrow=1.5, ncol=1.5, coord_flip=FALSE, sig_only=F, do.facet=F){
+                          out=NULL, nrow=1.5, ncol=1.5, coord_flip=FALSE, sig_only=F, do.facet=F, do.pie=FALSE){
     
     # Plot barplot of [M x N] matrix
     # x-axis = matrix columns (e.g. cell types)
@@ -903,8 +1111,8 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
     
     # Groups (default = rows)
     if(is.null(group_by)){group_by = rownames(data)}
-    if(nlevels(group_by) == 0){group_by = as.factor(group_by)}
-    
+    if(nlevels(group_by) == 0){group_by = factor(group_by, levels=group_by)}
+        
     # Select significant comparisons
     if(sig_only == TRUE){
         j = apply(pvals, 2, min) <= .05
@@ -914,14 +1122,12 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
     }
         
     # Construct input data
-    print(data)
     names = colnames(data)
     data = data.frame(group=group_by, data)
     group_levels = levels(group_by)
-    print(names)
-    print(colnames(data))
-    print(2:ncol(data))
-    colnames(data)[2:ncol(data)] = names
+    if(ncol(data) > 2){
+        colnames(data)[2:ncol(data)] = names
+    }
     data = as.data.table(gather_(data, 'x', 'y', setdiff(colnames(data), 'group')))
     
     # Value function
@@ -940,7 +1146,7 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
 	setkeyv(data, c('x', 'group'))
 	setkeyv(pvals, c('x', 'group'))
 	data = merge(data, pvals, all=T)
-	data$lab1 = ifelse(data$pval <= .001, '**', ifelse(data$pval <= .05, '*', ''))
+	data$lab1 = ifelse(data$pval <= .001, '***', ifelse(data$pval <= .01, '**', ifelse(data$pval <= .05, '*', '')))
     }
 
     if(coord_flip == TRUE){names = rev(names); group_levels=rev(group_levels)}
@@ -952,14 +1158,14 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
     
     # Plot data
     if(pos == 'stack'){
-        p = ggplot(data) + geom_bar(aes(x=x, y=u, fill=group), colour=border, size=.25, stat='identity')
+        p = ggplot(data[!is.na(group)]) + geom_bar(aes(x=x, y=u, fill=group), colour=border, size=.25, stat='identity', na.rm=T)
 	if(error %in% c('sd', 'se')){p = p + geom_errorbar(aes(x=x, ymin=u-s, ymax=u+s, fill=group), stat='identity', width=.25)}
     } else {
         pos = position_dodge(.9)
-        p = ggplot(data) + geom_bar(aes(x=x, y=u, fill=group), colour=border, size=.25, stat='identity', position=pos)
+        p = ggplot(data[!is.na(group)]) + geom_bar(aes(x=x, y=u, fill=group), colour=border, size=.25, stat='identity', na.rm=T, position=pos)
 	if(error %in% c('sd', 'se')){p = p + geom_errorbar(aes(x=x, ymin=u-s, ymax=u+s, fill=group), stat='identity', position=pos, width=.25)}
     }
-
+    
     p = p + 
         scale_fill_manual(values=colors, name=legend.title) + xlab(xlab) + ylab(ylab) +
         scale_color_manual('', values=c('#000000', '#999999', '#cccccc'), guide='none')
@@ -978,6 +1184,64 @@ matrix_barplot = function(data, group_by=NULL, pvals=NULL, xlab='', ylab='Freque
 	if(!is.null(pvals)){p = p + geom_text(aes(x=x, y=u+s+dy, label=lab1, group=group), hjust='center', vjust=1, size=5, angle=90, position=pos)}
     }
     
+    # Save plot
+    if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}
+    p
+}
+
+
+matrix_piechart = function(data, group_by=NULL, pvals=NULL, pcut=0.05, value='mean', do.all=FALSE, font_size=8, pal=NULL, num_row=NULL, num_col=NULL, border=NA, out=NULL, nrow=1.5, ncol=1.5){
+    
+    # Plot pieplot of [M x N] matrix
+    # x-axis = matrix columns (e.g. cell types)
+    # y-axis = matrix values (e.g. frequencies)
+    # fill = matrix rows (e.g. samples) or groups (e.g. conditions)
+    # group.by = the group of each row
+    
+    require(tidyverse)
+    require(data.table)
+        
+    # Groups (default = rows)
+    if(is.null(group_by)){group_by = rownames(data)}
+    if(nlevels(group_by) == 0){group_by = as.factor(group_by)}
+    
+    # Construct input data
+    names = colnames(data)
+    if(value == 'mean'){vf = mean} else if(value == 'sum'){vf = sum} else {stop('error: invalid "value" argument')}
+    data = data.frame(aggregate(data, list(group_by), vf, na.rm=T), row.names=1)
+    if(do.all == TRUE){data$All = rowSums(data); names=c(names, 'All')}
+    data = data %>% rownames_to_column('group')
+    data = as.data.table(gather_(data, 'x', 'y', setdiff(colnames(data), 'group')))
+    data$x = factor(data$x, levels=names)    
+    data$group = factor(data$group, levels=levels(group_by))
+
+    # Get palette
+    if(is.null(pal)){pal = set.colors}
+
+    # Add p-values
+    if(!is.null(pvals)){
+        pvals = as.data.frame(pvals) %>% gather(x, pval) %>% as.data.table()
+	setkey(data, x)
+	setkey(pvals, x)
+        data = merge(data, pvals, all=T)
+	data$color = factor(ifelse(data$pval <= pcut, paste0('P < ', pcut), paste0('P > ', pcut)))
+    } else {
+        data$color = '1'
+    }
+    
+    # Plot data
+    p = ggplot(data[!is.na(group)]) +
+        geom_bar(aes(x=1, y=y, fill=group, color=color), stat='identity', position=position_fill()) +
+	facet_wrap(. ~ x, nrow=num_row, ncol=num_col) +
+	coord_polar('y', start=pi/2, direction=1) +
+	scale_y_continuous(expand = c(0,0)) +
+	scale_fill_manual('', values=pal) + scale_color_manual('', values=c('#000000', '#cccccc')) + 
+        theme_cowplot(font_size=font_size) +
+	theme(axis.text=element_blank(), axis.ticks=element_blank(), line=element_blank(), strip.background=element_blank()) +
+        xlab('') + ylab('') + labs(fill='')
+
+    if(length(unique(data$color)) == 1){p = p + guides(color=FALSE)}
+	
     # Save plot
     if(!is.null(out)){save_plot(plot=p, filename=out, nrow=nrow, ncol=ncol)}
     p
@@ -1093,15 +1357,18 @@ plot_volcanos = function(markers, color_by=NULL, outdir='volcano'){
 
 
 simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=NULL, size.title='', lab.use=NULL, lab.sig=FALSE, lab.near=0,  lab.n=0, lab.g=0, groups=NULL, lab.size=4, lab.type='up',
-                          palette=NULL, legend.fontsize=10, border=F, edges=NULL, na.value='#cccccc',
+                          palette=NULL, legend.fontsize=10, border=F, edges=NULL, na.value='#cccccc', do.label=F,
                           xlab=NULL, ylab=NULL, out=NULL, nrow=1, ncol=1, min_size=1, max_size=3, xskip=c(0,0), yskip=c(0,0), xlim=NULL, ylim=NULL, alpha=1, unlab.grey=FALSE, auto_color='multi',
-			  xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf, xmin.n=1, xmax.n=1, ymin.n=1, ymax.n=1){
+			  xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf, xmin.n=1, xmax.n=1, ymin.n=1, ymax.n=1, cmin=-Inf, cmax=Inf,
+			  legend.names=c('', 'lab.n', 'lab.use', 'lab.near'), do.sort=FALSE){
     
     require(ggplot2)
     require(ggrepel)
     require(cowplot)
     require(wordspace)
-    
+
+    x = as.numeric(x)
+    y = as.numeric(y)
     if(is.null(col)){col = rep('', length(x))}
     if(is.null(sig)){sig = rep(NA, length(x))}
     if(is.null(size)){size = rep(1, length(x))}
@@ -1117,10 +1384,14 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
     x[x > xmax] = xmax
     y[y < ymin] = ymin
     y[y > ymax] = ymax
+    col = pmax(cmin, col)
+    col = pmin(cmax, col)
     
     d = data.frame(x=x, y=y, lab=lab, col=col, size=size, flag='', sig=sig, stringsAsFactors=FALSE)
     i.lab = !is.na(d$lab)
     di = d[i.lab,]
+
+    if(do.sort){d = d[order(d$col),]}
     
     if(is.null(xlab)){xlab = deparse(substitute(x))}
     if(is.null(ylab)){ylab = deparse(substitute(y))}
@@ -1130,7 +1401,7 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
         i = c()
 	
 	if('up' %in% lab.type | 'down' %in% lab.type){
-
+	    
             # get breaks
 	    if(!is.null(groups)){groups.use = groups} else {
 	        breaks = seq(from=min(di$x, na.rm=T), to=max(di$x, na.rm=T), length.out=min(20, lab.n))
@@ -1140,17 +1411,19 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
 	    
 	    # get cells
 	    if('up' %in% lab.type){
-	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=di$y, total_cells=lab.n)))
+	        ngene = ifelse(yskip[[1]] < di$y & di$y < yskip[[2]], NA, di$y)
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=ngene, total_cells=lab.n)))
 		i = c(i, order(-1*di$y)[1:lab.g])
 	    }
 	    if('down' %in% lab.type){
-	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=-1*di$y, total_cells=lab.n)))
+	    	ngene = ifelse(yskip[[1]] < di$y & di$y < yskip[[2]], NA, -1*di$y)
+	        i = c(i, as.numeric(simple_downsample(cells=1:nrow(di), groups=groups.use, ngene=ngene, total_cells=lab.n)))
 		i = c(i, order(di$y)[1:lab.g])
 	    }
 	}
 	
 	if('right' %in% lab.type | 'left' %in% lab.type){
-
+	    
 	    # get breaks
 	    if(!is.null(groups)){groups.use = groups} else {
 	        breaks = seq(from=min(di$y, na.rm=T), to=max(di$y, na.rm=T), length.out=min(20, lab.n))
@@ -1169,6 +1442,12 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
 		i = c(i, order(di$x)[1:lab.g])
 	    }
 	}
+
+	if('random' %in% lab.type){
+
+	    i = c(i, sample(1:nrow(di), lab.n))
+	}
+	
 	di[unique(i), 'flag'] = 'lab.n'
     }
     d[i.lab,] = di
@@ -1192,7 +1471,7 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
     d$lab[d$flag == ''] = ''
     d = d[order(d$flag),]
     d$flag = factor(d$flag, levels=c('', 'lab.n', 'lab.use', 'lab.near'), ordered=T)
-
+    
     if(auto_color == 'none'){d$col = ''}
     if(auto_color == 'bw' & all(col == '')){d$col = ifelse(d$flag == '', '', 'lab.n')}
     if(auto_color == 'multi' & all(col == '')){d$col = d$flag}
@@ -1203,9 +1482,15 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
     d = rbind(d[i,], d[!i,])
     
     if(unlab.grey == TRUE){d[d$lab == '',]$col = ''}
-
+    
+    # hack: fix legend names
+    if(!is.numeric(d$col)){
+        d$col = as.factor(d$col)
+    	#levels(d$col) = legend.names
+    }
+    
     p = ggplot(d)
-
+    
     if(!is.null(edges)){p = p + geom_segment(data=edges, aes(x=x,y=y,xend=xend,yend=yend), color='black')}
     
     if(border == FALSE){
@@ -1221,9 +1506,20 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
     if(!is.null(xlim)){p = p + xlim(xlim)}
     if(!is.null(ylim)){p = p + ylim(ylim)}
     
-    if(border == TRUE){
+    # label colors on plot
+    if(do.label){
+        t = aggregate(d[,c('x', 'y')], list(d[,'col']), median)
+        colnames(t) = c('l', 'x', 'y')
+        p = p + geom_text_repel(data=t, aes(x=x, y=y, label=l, lineheight=.8), point.padding=NA, size=lab.size, family='Helvetica') + theme(legend.position='none')
+    }
+
+    if(border != FALSE){
         if(!is.null(palette)){
-            p = p + scale_fill_manual(name=col.title, values=palette, na.value=na.value, breaks=levels(as.factor(d$col)))
+            if(!is.numeric(d$col)){
+	        p = p + scale_fill_manual(name=col.title, values=palette, na.value=na.value, breaks=levels(as.factor(d$col)))
+	    } else {
+	        p = p + scale_fill_gradientn(name=col.title, colors=palette, na.value=na.value)
+	    }
         } else {
             if(!is.numeric(d$col)){
 	        p = p + scale_fill_manual(name=col.title, values=c('lightgrey', 'black', 'red', 'pink')) + theme(legend.position='none')
@@ -1233,7 +1529,11 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
         }    
     } else {
         if(!is.null(palette)){
-            p = p + scale_color_manual(name=col.title, values=palette, na.value=na.value, breaks=levels(as.factor(d$col)))
+	    if(!is.numeric(d$col)){
+                p = p + scale_color_manual(name=col.title, values=palette, na.value=na.value, breaks=levels(as.factor(d$col)))
+	    } else {
+	        p = p + scale_color_gradientn(name=col.title, colors=palette, na.value=na.value)
+	    }
         } else {
             if(!is.numeric(d$col)){
 	        p = p + scale_color_manual(name=col.title, values=c('lightgrey', 'black', 'red', 'pink')) + theme(legend.position='none')
@@ -1247,3 +1547,10 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
 
     return(p)
 }
+
+
+simple_volcano = function(mi, x='coefD', y='padjD', lab='gene', xskip=c(-1,1), xlab='Fold change\n(discrete coefficient)', ylab='-log10(Adjusted p-value)', ...){
+    simple_scatter(mi[[x]], -log10(mi[[y]]), lab=mi[[lab]], xskip=xskip, xlab=xlab, ylab=ylab, yskip=c(0, -log10(.05)), ...) + geom_abline(slope=0, intercept=-log10(.05), linetype='dashed')
+}
+
+

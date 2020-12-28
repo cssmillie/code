@@ -133,14 +133,18 @@ nice_colors = function(n, col=NULL, type='fancy', hmin=NULL, hmax=NULL, cmin=NUL
     if((hmin < 0 & hmax < 0) | (hmin > 360 & hmax > 360)){stop('error: invalid hmin and hmax range')}
     if(hmin < 0){
         n1 = round(n*(-hmin)/(hmax - hmin))
-	beg = iwanthue(n1, hmin=360+hmin, hmax=360, cmin=cmin, cmax=cmax, lmin=lmin, lmax=lmax)
-	n = n - n1
+	if(n1 > 0){
+	    beg = iwanthue(n1, hmin=360+hmin, hmax=360, cmin=cmin, cmax=cmax, lmin=lmin, lmax=lmax)
+	    n = n - n1	    
+	}
 	hmin = 0
     }
     if(hmax > 360){
         n1 = round(n*(hmax - 360)/(hmax - hmin))
-	end = iwanthue(n1, hmin=0, hmax=hmax-360, cmin=cmin, cmax=cmax, lmin=lmin, lmax=lmax)
-	n = n - n1
+	if(n1 > 0){
+	    end = iwanthue(n1, hmin=0, hmax=hmax-360, cmin=cmin, cmax=cmax, lmin=lmin, lmax=lmax)
+	    n = n - n1
+	}
 	hmax = 360
     }
     pal = c(beg, iwanthue(n, hmin=hmin, hmax=hmax, cmin=cmin, cmax=cmax, lmin=lmin, lmax=lmax), end)
