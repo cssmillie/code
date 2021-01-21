@@ -12,12 +12,8 @@ if(interactive()){
     # read input arguments
     # --------------------
     parser = ArgumentParser()
-    parser$add_argument('--prefix', help='prefix (data=*.matrix.mtx, genes=*.genes.csv, cells=*.barcodes.csv, meta=*.meta.csv)', default='')
+    parser$add_argument('--seur', help='prefix (data=*.matrix.mtx, genes=*.genes.csv, cells=*.barcodes.csv, meta=*.meta.csv)', default='')
     parser$add_argument('--out', help='output file (rds)', required=TRUE)
-    parser$add_argument('--data', help='matrix (mtx)')
-    parser$add_argument('--genes', help='genes (csv)')
-    parser$add_argument('--cells', help='cells (csv)')
-    parser$add_argument('--meta', help='metadata (tsv)')
     args = parser$parse_args()
 
 }

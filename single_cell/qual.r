@@ -21,7 +21,7 @@ u = unique(collections)
 quals1 = c() # per-collection
 quals2 = c() # per-experiment
 for(cutoff in c(500, 750, 1000)){
-    
+
     qual1 = matrix(0, nrow=length(u), ncol=3)
     qual2 = rep(0, 4)
     rownames(qual1) = u
@@ -33,7 +33,7 @@ for(cutoff in c(500, 750, 1000)){
     reads = tapply(num_reads, collections, median)
     qual1[u, 1:3] = cbind(cells[u], genes[u], reads[u])
     qual2[1:4] = c(sum(num_genes >= cutoff), sum(num_genes >= cutoff)/length(u), median(num_genes), median(num_reads))
-    
+
     quals1 = cbind(quals1, qual1)
     quals2 = c(quals2, qual2)
 }

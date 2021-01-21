@@ -26,40 +26,40 @@ select_points = function(x, y, n, dir='both', loess=FALSE, nbins=25, bin_type='e
     i = which(!i)
     xi = x[i]
     yi = y[i]
-    
+
     # de-trend
     if(loess == TRUE){
         l = loess_regression(yi ~ xi, family='symmetric')
 	yi = l$fit$residuals
     }
-    
+
     # exclude data
     j = apply(sapply(exclude, function(e) (e[[1]] < xi) & (xi < e[[2]])), 1, any)
     j = which(!j)
     xi = xi[j]
     yi = yi[j]
     i = i[j]
-    
+
     # bin x-axis
     if(bin_type == 'equal_width'){
         groups = cut2(xi, cuts=seq(from=min(xi, na.rm=T), to=max(xi, na.rm=T), length.out=nbins), m=2*n/nbins)
     } else {
         groups = cut2(xi, g=nbins)
     }
-    
+
     # points
     j = c()
-    
+
     # up points
     if(dir %in% c('up', 'both')){
         j = c(j, as.numeric(simple_downsample(cells=1:length(xi), groups=groups, ngene=yi, total_cells=n)))
     }
-    
+
     # down points
     if(dir %in% c('down', 'both')){
         j = c(j, as.numeric(simple_downsample(cells=1:length(xi), groups=groups, ngene=-1*yi, total_cells=n)))
     }
-    
+
     return(i[j])
 }
 

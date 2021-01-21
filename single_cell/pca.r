@@ -4,20 +4,20 @@ require(scales)
 require(grid)
 
 
-# Run fast PCA on a Seurat object
-run_rpca = function(seur, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robust=FALSE){
-	 
-    # This function calculates a PCA on the DGE in seur@scale.data
-    # If data, this function will still update the Seurat object
+# Run fast PCA on a singlecell object
+run_rpca = function(obj, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robust=FALSE){
+
+    # This function calculates a PCA on the DGE in obj$scale.data
+    # If data, this function will still update the singlecell object
     # If cells.use, you may want to rescale data with rescale=TRUE
-    
-    require(rsvd)    
+
+    require(rsvd)
 
     # Get data and subset
-    if(is.null(data)){data = seur@scale.data}
+    if(is.null(data)){data = obj$scale.data}
     if(is.null(genes.use)){genes.use = rownames(data)}
-    if(is.null(cells.use)){cells.use = colnames(data)} 
-    data = data[genes.use, cells.use]    
+    if(is.null(cells.use)){cells.use = colnames(data)}
+    data = data[genes.use, cells.use]
 
     # Calculate PCA
     if(robust == FALSE){
@@ -27,26 +27,26 @@ run_rpca = function(seur, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=
         #pca.obj = rrpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
 	pca.obj = rrpca(t(data), k=k)
     }
-    seur@pca.obj = list(pca.obj)
-    seur@pca.rot = data.frame(pca.obj$x)
-    seur@pca.x = data.frame(pca.obj$rotation)
-    
-    # Return Seurat object
-    return(seur)
+    obj$pca.obj = list(pca.obj)
+    obj$pca.rot = data.frame(pca.obj$x)
+    obj$pca.x = data.frame(pca.obj$rotation)
+
+    # Return singlecell object
+    return(obj)
 }
 
 project_pca = function(pca_obj, data, genes.use=NULL, cells.use=NULL, rescale=FALSE, scale_obj=NULL){
-    
+
     # Project data along the PCs in pca_object
-    
+
     # Fix PCA object if necessary
     if(length(pca_obj) == 1){pca_obj = pca_obj[[1]]}
-    
+
     # Subset input data
     if(is.null(genes.use)){genes.use = rownames(data)}
     if(is.null(cells.use)){cells.use = colnames(data)}
     data = data[genes.use, cells.use]
-    
+
     # Re-scale input data, if necessary
     if(rescale == TRUE){
         if(is.null(scale_obj)){
@@ -57,38 +57,38 @@ project_pca = function(pca_obj, data, genes.use=NULL, cells.use=NULL, rescale=FA
 	    data = t(scale(t(data), center=attr(scale, 'attr:center'), scale=attr(scale, 'attr:scale')))
 	}
     } else {print('Assuming data has already been scaled')}
-    
+
     # Calculate pca.x
     pca.data = t(data) %*% pca_obj$rotation
     return(data.frame(pca.x))
 }
 
 # Get significant PCs
-get_num_pcs = function(seur, genes.use='', method='karthik', n.cores=1){
-    
+get_num_pcs = function(obj, genes.use='', method='karthik', n.cores=1){
+
     # Use variable genes by default
-    if(genes.use == ''){genes.use = seur@var.genes}
-    
+    if(genes.use == ''){genes.use = obj$var.genes}
+
     if(method == 'karthik'){
-        data = seur@data[genes.use,]
+        data = obj$data[genes.use,]
         num_pcs = sig.pcs.perm(t(data), randomized=T, n.cores=n.cores)$r
     }
-    
+
     if(method == 'jackstraw'){
-        num_pcs = jackStraw.permutation.test(seur)$r
+        num_pcs = jackStraw.permutation.test(obj)$r
     }
-    
+
     return(num_pcs)
 }
 
 
 # Karthik's significant PC test:
 sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
-                                        randomized=F,  
-                                        verbose=TRUE, seed = NULL, 
-                                        max.pc=100, n.cores=1, 
+                                        randomized=F,
+                                        verbose=TRUE, seed = NULL,
+                                        max.pc=100, n.cores=1,
                                         center=T, scale=T) {
-    
+
     ptm <- proc.time()
     if(B %% n.cores != 0){stop("Permutations must be an integer multiple of n.cores")}
     cat(sprintf("Scaling input matrix [center=%s, scale=%s]\n", center, scale))
@@ -105,12 +105,12 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
     }else{
         uu <- corpcor::fast.svd(dat, tol = 0)
     }
-    
+
     ndf <- n - 1
     dstat <- uu$d[1:ndf]^2/sum(uu$d[1:ndf]^2)
     dstat0 <- matrix(0, nrow = B, ncol = ndf)
     if(verbose==TRUE) message("Estimating number of significant principal components. Permutation: ")
-    
+
     #permutations
     if(n.cores==1){
         for (i in 1:B) {
@@ -138,7 +138,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
             do.call(rbind, lapply(v, function(i) {
                 if(verbose==TRUE) cat(paste(i," "))
                 dat0 <- t(apply(dat, 1, sample, replace = FALSE))
-                
+
                 if(randomized){
                     require(rsvd)
                     uu0 <- rsvd(as.matrix(dat0), k=max.pc)
@@ -147,7 +147,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
                 }
                 uu0$d[1:ndf]^2/sum(uu0$d[1:ndf]^2)
             }))
-            
+
         }
         cat("\nUnregistering parallel backend..")
         stopCluster(cl)
@@ -164,7 +164,7 @@ sig.pcs.perm <- function (dat, B = 100, threshold = 0.05,
     r <- sum(p <= threshold)
     y = proc.time() - ptm
     cat(sprintf("\n\n PC permutation test completed. \n %s PCS significant (p<%s, %s bootstraps)\n Runtime: %s s\n ", r,  threshold, B,signif(y[["elapsed"]], 3)))
-    
+
     return(list(r = r, p = p))
 }
 
@@ -186,16 +186,16 @@ variance.explained.plot <- function(pca, show_n_pcs=6)
   		max.y = max(x)
   		increment = 5
   	}
-  	
-  	var_plot = ggplot(x, aes(pc_index, variance)) + 
+
+  	var_plot = ggplot(x, aes(pc_index, variance)) +
   	  	# geom_line(linetype="dashed",  # Dashed line
   	   #            size = 0.5) +       # Thicker line
   	   #  geom_point(shape = 0,         # Hollow squares
-  	   #             size = 6)  + 
+  	   #             size = 6)  +
   		geom_bar(stat="identity") +
-  	    theme_bw() + xlab("PC") + ylab("% Variance explained") + 
-  		scale_x_discrete(limits=seq(1,show_n_pcs)) 
-  		#+ 
+  	    theme_bw() + xlab("PC") + ylab("% Variance explained") +
+  		scale_x_discrete(limits=seq(1,show_n_pcs))
+  		#+
   		#scale_y_continuous(breaks=seq(0,max.y,by=increment))
   	print(var_plot)
   	dev.off()
@@ -213,7 +213,7 @@ sig.pcs <- function(data, binarise.cutoff=0, center=T, scale=F, do.fast=F)
     data.shuffled=apply(data,1,function(x) sample(x,length(x),replace=F))
     pc.data.binary.permuted[pc.data.binary.permuted == 1]=as.numeric(data.shuffled[data.shuffled > 0])
     # scale permuted data set
-    pc.data.perm=data.frame(t(scale(t(pc.data.binary.permuted),center=center,scale=scale)))    
+    pc.data.perm=data.frame(t(scale(t(pc.data.binary.permuted),center=center,scale=scale)))
     # pca on permuted data set
 
     if (do.fast) {
@@ -246,18 +246,6 @@ downsample.pca <- function(data, pcs.use=0, num.genes=20, balanced=FALSE, p.thre
     return (data[genes.keep, ])
 }
 
-downsample.pca.seurat <- function(seurat.obj, n.sig=10, max.per.pc=20)
-{
-    info("Running jackstraw..")
-    require(jackstraw)
-    seurat.obj=jackStraw(seurat.obj,num.replicate = 200,do.print = TRUE) 
-    jackStrawPlot(seurat.obj,PCs = 1:12)
-    info("Calculating PC significance scores for each gene..")
-    seurat.obj=project.pca(seurat.obj,do.print=TRUE)
-    pc.sig.genes=pca.sig.genes(nbt, 1:n.sig,  pval.cut = 1e-6, max.per.pc = max.per.pc)
-    return(pc.sig.genes)
-}
-
 get.loaded.genes <- function(pca, components=1:6, n_genes=20)
 {
     rval = NULL
@@ -267,9 +255,9 @@ get.loaded.genes <- function(pca, components=1:6, n_genes=20)
         l = loadings[, pc]
         top_loadings = as.character(head(names(sort(l, decreasing=TRUE)), n=n_genes))
         bottom_loadings = as.character(tail(names(sort(l, decreasing=TRUE)), n=n_genes))
-        
+
         v = data.frame(c(top_loadings, bottom_loadings))
-        
+
         colnames(v) = c(paste("PC-",pc, sep=""))
         #print(v)
         rn = c(1:n_genes, (length(l)-(n_genes-1)):length(l))
@@ -282,11 +270,11 @@ get.loaded.genes <- function(pca, components=1:6, n_genes=20)
         {
             rval = cbind.data.frame(rval, v)
         }
-    } 
+    }
     return(rval)
 }
 
-visualise.pca <- function(pca, groups, 
+visualise.pca <- function(pca, groups,
               draw_biplot=T,
 							label_samples=T,
 							n_components = 4,
@@ -294,22 +282,22 @@ visualise.pca <- function(pca, groups,
 							top_genes = 20)
 {
 
-	
+
 	v = variance.explained.plot(pca, show_n_pcs=8)
-	 
+
 
 	# Show the genes that make up the PCs
 	initial_wd = getwd()
 	info("PC loadings:")
   loadings <- pca$rotation
-	
+
   print(loadings[1:5, 1:5])
 	loading_dir = "PC_Loaded_Genes"
 	dir.create(loading_dir, showWarnings = FALSE)
     setwd(loading_dir)
 	top_genes_file = "top_PC_loaded_genes.pdf"
 	pdf(top_genes_file, height=11, width=8.5)
-	
+
 	for(pc in 1:n_components){
   		cat(sprintf("Writing top loaded genes for PC-%i ..\n", pc))
   		l = loadings[, pc]
@@ -318,7 +306,7 @@ visualise.pca <- function(pca, groups,
 
   		grid.table(top_loadings)
   		grid.newpage()
-		
+
 	}
 	dev.off()
 	bottom_genes_file = "bottom_PC_loaded_genes.pdf"
@@ -332,7 +320,7 @@ visualise.pca <- function(pca, groups,
 
 		grid.table(top_loadings)
 		grid.newpage()
-		
+
 	}
 	dev.off()
 
@@ -345,10 +333,10 @@ visualise.pca <- function(pca, groups,
 	scores <- data.frame(groups, pca$x[,1:n_components])
 	x = c(1:n_components)
 	pairs = combn(x, 2)
-	print(pairs)	
+	print(pairs)
 	n_pairs = ncol(pairs)
 	cat(sprintf("Generating %i plots.. \n", n_pairs))
-	scores$sample_name <- rownames(scores) 
+	scores$sample_name <- rownames(scores)
 	print(head(scores))
 	for(p in 1:n_pairs){
 		pair = pairs[, p]
@@ -360,44 +348,44 @@ visualise.pca <- function(pca, groups,
 		# regular pc vs pc scatter:
 		cat(" Generating regular scatter plot \n")
     n = length(unique(groups))
-    p1 = ggplot(data = scores, aes_string(x=paste("PC", i,sep=""), y=paste("PC", j,sep=""), label="sample_name")) + 
+    p1 = ggplot(data = scores, aes_string(x=paste("PC", i,sep=""), y=paste("PC", j,sep=""), label="sample_name")) +
   			geom_point(aes(fill = factor(groups), shape=21, size=3)) + theme_bw() +
-        xlab(sprintf("PC %s   [%s%% variance explained]", i, round(v[i], 1))) + 
-        ylab(sprintf("PC %s   [%s%% variance explained]", j, round(v[j], 1))) + 
-  			scale_fill_manual(values=colorRampPalette(brewer.pal(n, "Set1"))(n)) + scale_colour_manual(values=c("black"), guide=FALSE) +  
-  			scale_shape_identity() + 
-  	    guides(fill = guide_legend(override.aes = list(shape = 21, size=3), title="Group"), colour=NULL) + 
+        xlab(sprintf("PC %s   [%s%% variance explained]", i, round(v[i], 1))) +
+        ylab(sprintf("PC %s   [%s%% variance explained]", j, round(v[j], 1))) +
+  			scale_fill_manual(values=colorRampPalette(brewer.pal(n, "Set1"))(n)) + scale_colour_manual(values=c("black"), guide=FALSE) +
+  			scale_shape_identity() +
+  	    guides(fill = guide_legend(override.aes = list(shape = 21, size=3), title="Group"), colour=NULL) +
         ggtitle(sprintf("PCA biplot [PC%s vs PC%s]", i, j))
 		if(label_samples){
-			 p1 = p1 + geom_text(data = scores, vjust=1.5, size=2) 
+			 p1 = p1 + geom_text(data = scores, vjust=1.5, size=2)
 		}
 		# ggbiplot fancier scatter:
 		if(draw_biplot)
     {
         cat(" Generating biplot\n")
-        g <- ggbiplot(pca, 
-    				obs.scale = 1, 
-    				var.scale = 1, 
-    				choices = c(i,j), 
-    				pc.biplot = TRUE, 
-    				groups = groups, 
+        g <- ggbiplot(pca,
+    				obs.scale = 1,
+    				var.scale = 1,
+    				choices = c(i,j),
+    				pc.biplot = TRUE,
+    				groups = groups,
     				show.loadings=show.loadings,
     				ellipse = TRUE)
-    		g <- g + scale_color_discrete(name = '') + scale_colour_manual(values=colorRampPalette(brewer.pal(n, "Set1"))(n)) +  
-        scale_shape_identity() + 
-        guides(fill = guide_legend(override.aes = list(shape = 21, size=3), title="Cell Type")) 
-    		g <- g + theme(legend.direction = 'horizontal', 
+    		g <- g + scale_color_discrete(name = '') + scale_colour_manual(values=colorRampPalette(brewer.pal(n, "Set1"))(n)) +
+        scale_shape_identity() +
+        guides(fill = guide_legend(override.aes = list(shape = 21, size=3), title="Cell Type"))
+    		g <- g + theme(legend.direction = 'horizontal',
     		               legend.position = 'top', legend.title=element_text("Cell Type")) + theme_bw()
         print(g)
     }
 		print(p1)
-		
+
 		dev.off()
 	}
 	setwd(initial_wd)
 }
 
-# assumes the input data matrix has samples as columns and 
+# assumes the input data matrix has samples as columns and
 # measurements (genes) as rows
  convert_to_pca_scores <- function(data_matrix, pcs=20){
  	cat(sprintf("Running PCA .. [pcs=%i].. \n", pcs))
@@ -407,25 +395,25 @@ visualise.pca <- function(pca, groups,
  }
 
 # modified this to only show top loaded genes. sep27, 2015
-# 
+#
 #  ggbiplot.r
-#  
+#
 #  Copyright 2011 Vincent Q. Vu.
-# 
+#
 #  This program is free software; you can redistribute it and/or
 #  modify it under the terms of the GNU General Public License
 #  as published by the Free Software Foundation; either version 2
 #  of the License, or (at your option) any later version.
-#  
+#
 #  This program is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 #  GNU General Public License for more details.
-#  
+#
 #  You should have received a copy of the GNU General Public License
 #  along with this program; if not, write to the Free Software
 #  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-# 
+#
 
 #' Biplot for Principal Components using ggplot2
 #'
@@ -454,13 +442,13 @@ visualise.pca <- function(pca, groups,
 #'   wine.pca <- prcomp(wine, scale. = TRUE)
 #'   print(ggbiplot(wine.pca, obs.scale = 1, var.scale = 1, groups = wine.class, ellipse = TRUE, circle = TRUE))
 #'
-ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE, 
-                      obs.scale = 1 - scale, var.scale = scale, 
-                      groups = NULL, ellipse = FALSE, ellipse.prob = 0.68, 
-                      labels = NULL, labels.size = 3, alpha = 1, 
-                      var.axes = TRUE, 
-                      circle = FALSE, circle.prob = 0.69, 
-                      varname.size = 3, varname.adjust = 1.5, 
+ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
+                      obs.scale = 1 - scale, var.scale = scale,
+                      groups = NULL, ellipse = FALSE, ellipse.prob = 0.68,
+                      labels = NULL, labels.size = 3, alpha = 1,
+                      var.axes = TRUE,
+                      circle = FALSE, circle.prob = 0.69,
+                      varname.size = 3, varname.adjust = 1.5,
                       show.loadings = 20,
                       varname.abbrev = FALSE, ...)
 {
@@ -508,7 +496,7 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
     df.u <- df.u * nobs.factor
   }
 
-  # Scale the radius of the correlation circle so that it corresponds to 
+  # Scale the radius of the correlation circle so that it corresponds to
   # a data ellipse for the standardized PC scores
   r <- sqrt(qchisq(circle.prob, df = 2)) * prod(colMeans(df.u^2))^(1/4)
 
@@ -524,8 +512,8 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
   }
 
   # Append the proportion of explained variance to the axis labels
-  u.axis.labs <- paste(u.axis.labs, 
-                       sprintf('(%0.1f%% explained var.)', 
+  u.axis.labs <- paste(u.axis.labs,
+                       sprintf('(%0.1f%% explained var.)',
                                100 * pcobj$sdev[choices]^2/sum(pcobj$sdev^2)))
 
   # Score Labels
@@ -550,16 +538,16 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
   df.v$hjust = with(df.v, (1 - varname.adjust * sign(xvar)) / 2)
 
   # Base plot
-  g <- ggplot(data = df.u, aes(x = xvar, y = yvar)) + 
+  g <- ggplot(data = df.u, aes(x = xvar, y = yvar)) +
           xlab(u.axis.labs[1]) + ylab(u.axis.labs[2]) + coord_equal()
 
   if(var.axes) {
     # Draw circle
-    if(circle) 
+    if(circle)
     {
       theta <- c(seq(-pi, pi, length = 50), seq(pi, -pi, length = 50))
       circle <- data.frame(xvar = r * cos(theta), yvar = r * sin(theta))
-      g <- g + geom_path(data = circle, color = muted('white'), 
+      g <- g + geom_path(data = circle, color = muted('white'),
                          size = 1/2, alpha = 1/3)
     }
 
@@ -571,23 +559,23 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
     g <- g +
       geom_segment(data = df.v,
                    aes(x = 0, y = 0, xend = xvar, yend = yvar),
-                   arrow = arrow(length = unit(1/2, 'picas')), 
+                   arrow = arrow(length = unit(1/2, 'picas')),
                    color = muted('red'))
   }
 
   # Draw either labels or points
   if(!is.null(df.u$labels)) {
     if(!is.null(df.u$groups)) {
-      g <- g + geom_text(aes(label = labels, color = groups), 
+      g <- g + geom_text(aes(label = labels, color = groups),
                          size = labels.size)
     } else {
-      g <- g + geom_text(aes(label = labels), size = labels.size)      
+      g <- g + geom_text(aes(label = labels), size = labels.size)
     }
   } else {
     if(!is.null(df.u$groups)) {
       g <- g + geom_point(aes(color = groups), alpha = alpha)
     } else {
-      g <- g + geom_point(alpha = alpha)      
+      g <- g + geom_point(alpha = alpha)
     }
   }
 
@@ -603,7 +591,7 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
       sigma <- var(cbind(x$xvar, x$yvar))
       mu <- c(mean(x$xvar), mean(x$yvar))
       ed <- sqrt(qchisq(ellipse.prob, df = 2))
-      data.frame(sweep(circle %*% chol(sigma) * ed, 2, mu, FUN = '+'), 
+      data.frame(sweep(circle %*% chol(sigma) * ed, 2, mu, FUN = '+'),
                  groups = x$groups[1])
     })
     names(ell)[1:2] <- c('xvar', 'yvar')
@@ -612,15 +600,15 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
 
   #Label the variable axes
   if(var.axes) {
-    g <- g + 
-    geom_text(data = df.v, 
-              aes(label = varname, x = xvar, y = yvar, 
-                  angle = angle, hjust = hjust), 
+    g <- g +
+    geom_text(data = df.v,
+              aes(label = varname, x = xvar, y = yvar,
+                  angle = angle, hjust = hjust),
               color = 'darkred', size = varname.size)
   }
   #Change the name of the legend for groups
   if(!is.null(groups)) {
-    g <- g + scale_color_brewer(name = deparse(substitute(groups)), 
+    g <- g + scale_color_brewer(name = deparse(substitute(groups)),
                                 palette = 'Dark2')
   }
 
