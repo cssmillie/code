@@ -82,7 +82,7 @@ load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL){
 plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL, meta=NULL, regex=NULL, files=NULL, file.cols=NULL, file.regex=NULL, top=NULL, ident=TRUE, data.use='log2',
                      combine_genes='mean', cells.use=NULL, ymin=0, ymax=1, num_col='auto', pt.size=.75, font.size=11, do.label=T, label.size=5, do.title=TRUE, title.use=NULL, dpal=NULL, cpal=NULL,
 	             do.legend=TRUE, legend.title='log2(TP10K+1)', share_legend=FALSE, share_legend_rescale=TRUE, legend.size=1, legend_width=.05, legend.cols=NULL, vmin=NA, vmax=NA,
-		     na.value='transparent', out=NULL, nrow=1.5, ncol=1.5, return_plotlist=FALSE, ds_cells=NULL, agg.ident=FALSE, do.sort=FALSE, ...){
+		     na.value='transparent', out=NULL, nrow=1.5, ncol=1.5, return_plotlist=FALSE, ds_cells=NULL, agg.ident=FALSE, do.sort=FALSE, image=NULL, image_ds=10, xzoom=NULL, yzoom=NULL, ...){
     
     
     # TSNE coordinates
@@ -100,18 +100,29 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     } else if(ident & !is.null(seur)){
         d$Identity = seur@ident
     }
-        
+
+    # Fix zoom coordinates
+    if(!is.null(xzoom)){
+        xzoom[1] = max(1, xzoom[1])
+	xzoom[2] = min(dim(image)[2], xzoom[2])
+    }
+    if(!is.null(yzoom)){
+        yzoom[1] = max(1, yzoom[1])
+	yzoom[2] = min(dim(image)[1], yzoom[2])
+    }
+    
     # Cell scores
     if(!is.null(cells.use)){cells.use = intersect(cells.use, rownames(d))}
     scores = score_cells(seur=seur, data=data, meta=meta, names=names, regex=regex, files=files, file.cols=file.cols, file.regex=file.regex, top=top, scores=scores,
                          data.use='log2', combine_genes=combine_genes, cells.use=cells.use)
+			 
     if(!is.null(scores)){
         i = intersect(rownames(d), rownames(scores))
 	ni = c(names(d), names(scores))
 	d = cbind.data.frame(d[i,], scores[i,], stringsAsFactors=F)
 	colnames(d) = ni
     }
-    
+        
     if(agg.ident == TRUE){
         j = setdiff(colnames(d), c('x', 'y', 'Identity'))
         d[,j] = apply(d[,j,drop=F], 2, function(a){
@@ -134,7 +145,7 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     
     if(is.null(cells.use)){cells.use = rownames(d)}
     d = data.frame(d[cells.use,])
-        
+    
     # Initialize plotlist
     cat('\nPlotting:', paste(colnames(subset(d, select=-c(x,y))), collapse=', '), '\n')
     ps = list()
@@ -172,7 +183,14 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 	        cont.colors = material.heat(50)
 	    }
 	    d[,col] = qtrim(d[,col], qmin=ymin, qmax=ymax)
-	    p = ggplot(d) +
+
+	    p = ggplot(d)
+
+	    if(!is.null(image)){
+	        p = p + plot_image(image, xzoom=xzoom, yzoom=yzoom, downsample=image_ds)
+	    }
+	    
+	    p = p +
 	        geom_point(aes_string(x='x',y='y',colour=col), size=pt.size, ...) +
 		scale_colour_gradientn(colours=cont.colors, guide=guide_colourbar(barwidth=.5, title=legend.title), na.value=na.value, limits=c(vmin, vmax)) + 
 		theme_cowplot(font_size=font.size) +
@@ -199,8 +217,14 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 		}
 	    }
 	    if(! is.factor(d[,col])){d[,col] = factor(d[,col], levels=naturalsort(unique(d[,col])))}
-	    
-	    p = ggplot(d) +
+
+	    p = ggplot(d)
+
+	    if(!is.null(image)){
+	        p = p + plot_image(image, xzoom=xzoom, yzoom=yzoom, downsample=image_ds)
+	    }
+	    	    	    
+	    p = p + 
 	        geom_point(aes_string(x='x',y='y',colour=col), size=pt.size, ...) +
 		theme_cowplot(font_size=font.size) +
 		xlab('TSNE 1') + ylab('TSNE 2') +
@@ -221,6 +245,25 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
 	}
 	if(do.legend == FALSE){p = p + theme(legend.position='none')}
 	if(legend.title == ''){p = p + theme(legend.title=element_blank())}
+
+	if(!is.null(image)){
+	    if(!is.null(xzoom)){
+	        xmin = xzoom[1]
+		xmax = xzoom[2]
+	    } else {
+	        xmin = 1
+		xmax = dim(image)[2]
+	    }
+	    if(!is.null(yzoom)){
+	        ymin=yzoom[1]
+		ymax=yzoom[2]
+	    } else {
+	        ymin = 1
+		ymax = dim(image)[1]
+	    }
+	
+	    p = p + xlim(c(xmin, xmax)) + ylim(c(ymin, ymax))
+	}
 	
 	ps[[col]] = p
     }
@@ -245,6 +288,29 @@ plot_tsne = function(seur=NULL, names=NULL, scores=NULL, coords=NULL, data=NULL,
     }
     
     if(return_plotlist == TRUE){return(ps)} else {return(p)}
+}
+
+
+plot_image = function(image, xzoom=NULL, yzoom=NULL, downsample=10){
+    if(!is.null(xzoom)){
+        xmin = xzoom[1]
+	xmax = xzoom[2]
+    } else {
+        xmin = 1
+	xmax = dim(image)[2]
+    }
+    if(!is.null(yzoom)){
+        ymin = yzoom[1]
+	ymax = yzoom[2]
+    } else {
+        ymin = 1
+	ymax = dim(image)[1]
+    }
+    xdown = max(1, as.integer(downsample*(xmax-xmin)/dim(image)[2]))
+    ydown = max(1, as.integer(downsample*(ymax-ymax)/dim(image)[1]))
+    i = rev(seq(from=ymin, to=ymax, by=xdown))
+    j = seq(from=xmin, to=xmax, by=ydown)
+    annotation_raster(image[i,j,], xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, interpolate=TRUE)
 }
 
 

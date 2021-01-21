@@ -30,6 +30,66 @@ msg = function(name, text, verbose){
 }
 
 
+autoload_seurat = function(prefix, name='test', ming=0, minc=0){
+    
+    # read data
+    data = paste0(prefix, '.matrix.mtx')
+    if(file.exists(data)){
+        data = readMM(data)
+    } else {
+        data = paste0(prefix, '.matrix.csv')
+	data = read.table(data, sep=',')
+    }
+    print(paste('data', dim(data)))
+    
+    # read genes (rownames)
+    rows = paste0(prefix, '.genes.csv')
+    if(file.exists(rows)){
+        rows = read.table(rows, sep=',')[,1]
+    }
+
+    # read barcodes (colnames)
+    cols = paste0(prefix, '.barcodes.csv')
+    if(file.exists(cols)){
+        cols = read.table(cols, sep=',')[,1]
+    }
+
+    # fix rownames/colnames
+    if(abs(nrow(data) - length(cols)) < abs(nrow(data) - length(rows))){
+        data = t(data)
+    }
+    if(nrow(data) == (length(rows) - 1)){
+        rows = rows[2:length(rows)]
+    }
+    if(ncol(data) == (length(cols) - 1)){
+        cols = cols[2:length(cols)]    
+    }
+
+    # set rownames/colnames
+    rownames(data) = rows
+    colnames(data) = cols
+    
+    # read metadata
+    meta = paste0(prefix, '.meta.csv')
+    if(file.exists(meta)){
+        meta = read.table(meta, sep=',', header=TRUE, row.names=1)
+	print(paste('metadata:', dim(meta)))
+    }
+
+    # read image
+    image = paste0(prefix, '.image_hires.png')
+    if(file.exists(image)){
+	library(png)
+        image = readPNG(image)
+	print(paste('image:', dim(image)))
+    }
+    
+    # make seurat object
+    seur = make_seurat(name=name, dge=data, minc=minc, ming=ming)
+    return(list(seur=seur, meta=meta, image=image))
+}
+
+
 make_seurat = function(name, dge=NULL, regex='', regexv='', minc=10, maxc=NULL,maxc_per_group=NULL, ming=500, maxg=1e6, genes.use=NULL, cells.use=NULL, ident_fxn=NULL, verbose=FALSE, x11=FALSE, qnorm=F){
     
     # Load packages
