@@ -495,11 +495,11 @@ merge_objs_hm = function(objs, target='human', ident_fxn=NULL, ortholog_filter='
     names(ident.use) = names(org.use) = names(dset.use) = cells.use
 
     # Define human and mouse gene sets
-    h_genes = readLines('~/aviv/db/map_gene/hg19_genes.txt')
-    m_genes = readLines('~/aviv/db/map_gene/mm10_genes.txt')
+    h_genes = readLines('~/code/db/hg19_genes.txt')
+    m_genes = readLines('~/code/db/mm10_genes.txt')
 
     # Map genes
-    ortho_fn = '~/aviv/db/map_gene/hm_orthologs.rds'
+    ortho_fn = '~/code/db/hm_orthologs.rds'
     if(file.exists(ortho_fn)){
         print('Reading 1:1 orthologs')
         res = readRDS(ortho_fn)

@@ -70,7 +70,7 @@ subsample_points = function(coords, k, nbins=25, bin_type='size'){
 
 
 load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL){
-    if(!file.exists(file)){file = paste0('~/aviv/db/markers/', file, '.txt')}
+    if(!file.exists(file)){file = paste0('~/code/markers/', file, '.txt')}
     sig = read.table(file, stringsAsFactors=F, row.names=1)
     sig = structure(strsplit(sig[,1], ','), names=rownames(sig))
     if(!is.null(file.regex)){file.cols = grep(file.regex, names(sig), value=T)}

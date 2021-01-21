@@ -5,8 +5,8 @@ source('~/code/single_cell/tpm.r')
 fast_gsea = function(ranks, pathways=NULL, bg=NULL, do.bg=FALSE, regex='BP|MF|CC|hallmark|canonical', minSize=5, maxSize=500, nperm=1000, gseaParam=1){
 
     require(fgsea)
-    hpath = '~/aviv/db/gsea/human.gsea_pathways.rds'
-    mpath = '~/aviv/db/gsea/mouse.gsea_pathways.rds'
+    hpath = '~/code/db/human.gsea_pathways.rds'
+    mpath = '~/code/db/mouse.gsea_pathways.rds'
 
     # inputs:
     # ranks = list(gene1 = pval, gene2 = pval)
@@ -352,7 +352,7 @@ diff_signatures = function(obj, cells.1, cells.2, signatures, group_by=NULL){
 }
 
 
-pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes.txt', require_ix=TRUE){
+pair_enrich = function(pairs, gene_sets, universe='~/code/db/hg19_genes.txt', require_ix=TRUE){
     require(data.table)
 
     # Calculate enrichment scores for all gene pairs (e.g. ligand-receptor interactions) and gene sets (e.g. GO terms)
@@ -401,7 +401,7 @@ pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes
 }
 
 
-gsea.fisher = function(gene_set1, gene_set2, universe='~/aviv/db/map_gene/hg19_genes.txt', n.cores=1){
+gsea.fisher = function(gene_set1, gene_set2, universe='~/code/db/hg19_genes.txt', n.cores=1){
 
     # GSEA with fisher test
     # gene_set1 = list of genes
@@ -458,7 +458,7 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
     boot = bootVcov1(zlm.obj, gsea.boot)
 
     # Get GO gene list
-    genes = read.table('~/aviv/db/gopca/go_annotations_human.tsv', sep='\t', stringsAsFactors=F, row.names=1)
+    genes = read.table('~/code/db/gopca/go_annotations_human.tsv', sep='\t', stringsAsFactors=F, row.names=1)
     sets = structure(strsplit(genes[,4], ','), names=rownames(genes))
     sets = lapply(sets, function(a){b = as.integer(na.omit(match(a, rownames(zlm.obj@coefC))))})
     sets = sets[sapply(sets, length) >= 5]

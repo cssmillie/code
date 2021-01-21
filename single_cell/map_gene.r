@@ -3,19 +3,19 @@
 load_maps = function(h='hg19', m='mm10'){
 
     # Get gene lists
-    hgenes = readLines(paste0('~/aviv/db/map_gene/', h, '_genes.txt'))
-    mgenes = readLines(paste0('~/aviv/db/map_gene/', m, '_genes.txt'))
+    hgenes = readLines(paste0('~/code/db/', h, '_genes.txt'))
+    mgenes = readLines(paste0('~/code/db/', m, '_genes.txt'))
 
     # Get gene synonyms
-    hsyn = paste0('~/aviv/db/map_gene/', h, '.gene_map.txt')
+    hsyn = paste0('~/code/db/', h, '.gene_map.txt')
     hsyn = read.table(hsyn, row.names=1, sep='\t', stringsAsFactors=F, quote='', comment.char='')
-    msyn = paste0('~/aviv/db/map_gene/', m, '.gene_map.txt')
+    msyn = paste0('~/code/db/', m, '.gene_map.txt')
     msyn = read.table(msyn, row.names=1, sep='\t', stringsAsFactors=F, quote='', comment.char='')
 
     # Get other symbols
-    hsym = paste0('~/aviv/db/map_gene/human.db2sym.txt')
+    hsym = paste0('~/code/db/human.db2sym.txt')
     hsym = read.table(hsym, row.names=1, sep='\t', stringsAsFactors=F, quote='', comment.char='')
-    msym = paste0('~/aviv/db/map_gene/mouse.db2sym.txt')
+    msym = paste0('~/code/db/mouse.db2sym.txt')
     msym = read.table(msym, row.names=1, sep='\t', stringsAsFactors=F, quote='', comment.char='')
 
     # Combine synonyms and symbols
@@ -23,9 +23,9 @@ load_maps = function(h='hg19', m='mm10'){
     msyn = unique(rbind(msyn, msym))
 
     # Get orthologs
-    h2m = paste0('~/aviv/db/map_gene/orthologs.', h, '_to_', m, '.txt')
+    h2m = paste0('~/code/db/orthologs.', h, '_to_', m, '.txt')
     h2m = read.table(h2m, sep='\t', stringsAsFactors=F, quote='', comment.char='', row.names=1)
-    m2h = paste0('~/aviv/db/map_gene/orthologs.', m, '_to_', h, '.txt')
+    m2h = paste0('~/code/db/orthologs.', m, '_to_', h, '.txt')
     m2h = read.table(m2h, sep='\t', stringsAsFactors=F, quote='', comment.char='', row.names=1)
 
     # Return maps
