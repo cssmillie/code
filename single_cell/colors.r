@@ -97,10 +97,10 @@ col2hcl <- function(x, maxColorValue=255, ...){
 }
 
 nice_colors = function(n, col=NULL, type='fancy', hmin=NULL, hmax=NULL, cmin=NULL, cmax=NULL, lmin=NULL, lmax=NULL, plot=F){
-    
+
     library(grDevices)
     library(hues)
-    
+
     # initialize palette
     beg = end = c()
 
@@ -113,7 +113,7 @@ nice_colors = function(n, col=NULL, type='fancy', hmin=NULL, hmax=NULL, cmin=NUL
 
     # get preset color schemes
     if(!is.null(type)){
-	if(type == 'single'){cmin = 10; cmax = 100; lmin = 35; lmax = 100}	
+	if(type == 'single'){cmin = 10; cmax = 100; lmin = 35; lmax = 100}
         if(type == 'shades'){hmin = 0; hmax = 240; cmin = 0; cmax = 15; lmin = 0; lmax = 100;}
 	if(type == 'tarnish'){hmin = 0; hmax = 360; cmin = 0; cmax = 15; lmin = 30; lmax = 70;}
 	if(type == 'pastel'){hmin = 0; hmax = 360; cmin = 0; cmax = 30; lmin = 70; lmax = 100;}
@@ -124,18 +124,18 @@ nice_colors = function(n, col=NULL, type='fancy', hmin=NULL, hmax=NULL, cmin=NUL
 	if(type == 'fancy'){hmin = 0; hmax = 360; cmin = 15; cmax = 40; lmin = 70; lmax = 100;}
 	if(type == 'large'){hmin = 0; hmax = 360; cmin = 0; cmax = 85; lmin = 30; lmax = 95;}
     }
-    
+
     # fix chroma values
     cmin = cmin*180/100.
     cmax = cmax*180/100.
-    
+
     # handle edge cases
     if((hmin < 0 & hmax < 0) | (hmin > 360 & hmax > 360)){stop('error: invalid hmin and hmax range')}
     if(hmin < 0){
         n1 = round(n*(-hmin)/(hmax - hmin))
 	if(n1 > 0){
 	    beg = iwanthue(n1, hmin=360+hmin, hmax=360, cmin=cmin, cmax=cmax, lmin=lmin, lmax=lmax)
-	    n = n - n1	    
+	    n = n - n1
 	}
 	hmin = 0
     }

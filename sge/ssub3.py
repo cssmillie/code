@@ -76,7 +76,16 @@ def get_filename(prefix, suffix='txt', path='.'):
 class Task():
     
         
-    def __init__(self, command, inputs=[], outputs=[], m=[0], t=[7200], u=['']):
+    def __init__(self, command, inputs=[], outputs=[], bypass=[], m=[0], t=[7200], u=['']):
+        
+        # input arguments:
+        # command = job command text
+        # inputs = list of input files needed to run job
+        # outputs = list of output files needed for job completion
+        # bypass = list of files needed to bypass job
+        # m = memory vector
+        # t = time vector
+        # u = username vector
         
         # job tracking
         self.command = command
@@ -89,6 +98,7 @@ class Task():
         # job scheduling
         self.inputs = inputs
         self.outputs = outputs
+        self.bypass = bypass
         self.status = 'waiting'
         self.success = False
         
@@ -129,6 +139,12 @@ class Task():
         if len(self.outputs) == 0:
             return False
         return check_files(self.outputs)
+    
+    
+    def check_bypass(self):
+        if len(self.bypass) == 0:
+            return False
+        return check_files(self.bypass)
     
     
     def uid(self):
@@ -251,7 +267,7 @@ class Submitter():
         self.write_log('Job %s: "%s" (u=%s)\n%s' %(job_id, cmd, u, '\n'.join(commands)))
         
     
-    def add_task(self, command='', inputs=[], outputs=[], m=None, t=None, u=None):
+    def add_task(self, command='', inputs=[], outputs=[], bypass=[], m=None, t=None, u=None):
         assert type(command) == str
         
         # use default resources
@@ -260,7 +276,7 @@ class Submitter():
         u = self.u if u is None else u
         
         # create and return task
-        task = Task(command, inputs=inputs, outputs=outputs, m=m, t=t, u=u)
+        task = Task(command, inputs=inputs, outputs=outputs, bypass=bypass, m=m, t=t, u=u)
         self.tasks.append(task)
     
     
@@ -296,6 +312,8 @@ class Submitter():
         for task in self.tasks:
             if task.uid() in running_uids:
                 task.status = 'running'
+            elif task.check_bypass():
+                task.status = 'finished'
             elif task.check_outputs():
                 task.status = 'finished'
             elif not task.check_inputs():

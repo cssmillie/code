@@ -3,31 +3,31 @@ source('~/code/single_cell/tpm.r')
 
 
 fast_gsea = function(ranks, pathways=NULL, bg=NULL, do.bg=FALSE, regex='BP|MF|CC|hallmark|canonical', minSize=5, maxSize=500, nperm=1000, gseaParam=1){
-    
+
     require(fgsea)
-    hpath = '~/aviv/db/gsea/human.gsea_pathways.rds'
-    mpath = '~/aviv/db/gsea/mouse.gsea_pathways.rds'
-    
+    hpath = '~/code/db/human.gsea_pathways.rds'
+    mpath = '~/code/db/mouse.gsea_pathways.rds'
+
     # inputs:
     # ranks = list(gene1 = pval, gene2 = pval)
     # pathways = list(db1 = list(sig1 = genes, sig2 = genes, ...), db2 = list(sig1 = genes, sig2 = genes, ...))
     # bg = background set of genes (remove these from ranks and pathways)
-    
+
     # notes:
     # this function should be run on ranks from full gene universe, e.g.
     # markers = markers[pvalH < .05]
     # ranks = structure(markers$log2fc, names=markers$gene)
-    
+
     # convert markers to ranks
     if('gene' %in% colnames(ranks) & 'coefD' %in% colnames(ranks)){
         ranks = ranks[pvalD < .05]
 	ranks = structure(ranks$coefD, names=ranks$gene)
     }
-    
+
     # load default pathways
     if(is.null(pathways)){
         org = predict_organism(names(ranks)[1:min(length(ranks), 10)])
-	if(org == 'human'){pathways = readRDS(hpath)} else {pathways = readRDS(mpath)}	
+	if(org == 'human'){pathways = readRDS(hpath)} else {pathways = readRDS(mpath)}
     } else if(!is.list(pathways)){
         if(length(pathways) == 1){
 	    if(pathways == 'kegg'){
@@ -40,7 +40,7 @@ fast_gsea = function(ranks, pathways=NULL, bg=NULL, do.bg=FALSE, regex='BP|MF|CC
     }
     pathways = pathways[grep(regex, names(pathways))]
     print(names(pathways))
-    
+
     # filter background set
     if(is.null(bg)){bg = names(ranks)}
     bg = intersect(bg, names(ranks))
@@ -48,7 +48,7 @@ fast_gsea = function(ranks, pathways=NULL, bg=NULL, do.bg=FALSE, regex='BP|MF|CC
         ranks = ranks[bg]
 	pathways = lapply(pathways, function(a) lapply(a, function(b) intersect(bg, b)))
     }
-    
+
     gsea = list()
 
     # run gsea on each set of pathways
@@ -59,29 +59,29 @@ fast_gsea = function(ranks, pathways=NULL, bg=NULL, do.bg=FALSE, regex='BP|MF|CC
 	sizes = sapply(pathway, length)
 	pathway = pathway[minSize <= sizes & sizes <= maxSize]
 	print(paste(name, 'testing', length(pathway), 'gene sets'))
-	
+
 	# run gsea and sort by NES
         res = fgsea(pathways=pathway, stats=ranks, nperm=nperm, minSize=minSize, maxSize=maxSize, gseaParam=gseaParam)
 	res = res[order(-1*res$NES),]
 	gsea[[name]] = res
     }
-    
+
     return(gsea)
 }
 
 
 fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Panther_2016', collapse=FALSE){
-    
+
     require(enrichR)
     require(data.table)
-    
+
     # For full list of databases: listEnrichrDbs()
     # Computes enrichment with Fisher exact test
     # Also uses random gene sets to correct the Fisher test
-    
+
     # Select databases to use
     dbs = grep(regex, listEnrichrDbs()[,3], value=T)
-    
+
     # Run enrichment test
     res = enrichr(genes, dbs)
 
@@ -107,17 +107,17 @@ fast_enrich = function(genes, regex='GO_.*2017$|KEGG.*2016|Reactome.*2016|Panthe
 gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms=50, max_genes=200, min_genes_per_term=2, max_genes_per_term=20, font_size=8, fix_names=TRUE, max_overlap=.5,
                         xstag=FALSE, ystag=FALSE, xsec=FALSE, ysec=FALSE, auto_condense='cols', out=NULL, nrow='auto', ncol='auto', dir='pos', ...){
     require(tibble)
-    
+
     # Plot heatmap of GSEA results (terms x genes)
     # automatically select terms and genes within specified bounds
     # optionally color using named list of genes
-    
+
     # Get data to plot
     if('Term' %in% colnames(gsea) & 'Genes' %in% colnames(gsea)){
         terms = gsea$Term
 	genes = gsea$Genes
     }
-    
+
     if('pathway' %in% colnames(gsea) & 'leadingEdge' %in% colnames(gsea)){
         gsea = gsea[pval <= max_pval,]
 	if(nrow(gsea) == 0){return(NULL)}
@@ -127,10 +127,10 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
 	genes = gsea$leadingEdge
 	pvals = -log10(gsea$pval)
     }
-    
+
     # Split genes
     if(! is.list(genes)){genes = strsplit(genes, ',|;| ')}
-    
+
     # Remove redundant terms
     remove = sapply(2:length(genes), function(i){
         any(sapply(1:(i-1), function(j) {
@@ -142,7 +142,7 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
     terms = terms[c(TRUE, !remove)]
     genes = genes[c(TRUE, !remove)]
     pvals = pvals[c(TRUE, !remove)]
-    
+
     # Filter by minimum genes per term
     i = sapply(genes, length) >= min_genes_per_term
     terms = terms[i]
@@ -152,14 +152,14 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
 
     # Select max_genes_per_term from each gene list
     genes = sapply(genes, function(a) a[1:min(length(a), max_genes_per_term)])
-        
+
     # Filter by maximum total genes
     for(i in 1:length(genes)){if(length(unique(unlist(genes[1:i]))) >= max_genes){break}}
     terms = terms[1:(i-1)]
     genes = genes[1:(i-1)]
     pvals = pvals[1:(i-1)]
     if(length(terms) <= 1 | length(genes) <= 1){return(NULL)}
-    
+
     # Filter by maximum total terms
     if(length(terms) >= max_terms){
         print(paste('Dropping', max_terms - length(terms), 'terms'))
@@ -167,25 +167,25 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
 	genes = genes[1:max_terms]
 	pvals = pvals[1:max_terms]
     }
-    
+
     # Get all genes
     all_genes = sort(unique(unlist(genes)))
-    
+
     # Fix names
     if(fix_names == TRUE){
         terms = fix_gsea_names(terms)
     }
-    
+
     # Get colors
     if(is.null(colors) & !is.null(markers)){colors = structure(markers$coefD, names=markers$gene); legend.title='coefD'}
     if(is.null(colors)){colors = structure(rep(1, length(all_genes)), names=all_genes); legend.title='Presence'}
-    
+
     # Incidence matrix
     x = t(sapply(genes, function(gi) all_genes %in% gi) * colors[all_genes])
     rownames(x) = terms
     colnames(x) = all_genes
     if(nrow(x) <= 1 | ncol(x) <= 1){return(NULL)}
-    
+
     # Heatmap [terms x genes]
     if(ncol == 'auto' & nrow == 'auto'){
         ri = nrow(x)/max(nrow(x), ncol(x))
@@ -194,7 +194,7 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
 	ncol = max(2.5*ci, 1.25)
 	print(c(nrow, ncol))
     }
-    
+
     # Auto condense labels
     if(auto_condense %in% c('rows', 'both')){
         ysec = FALSE
@@ -204,9 +204,9 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
         xsec = FALSE
 	if(ncol(x) >= max_genes/2){xstag = TRUE}
     }
-        
+
     p1 = ggheatmap(x, pal='Blues', font_size=font_size, Rowv='hclust', Colv='hclust', xstag=xstag, ystag=ystag, xsec=xsec, ysec=ysec, ...)
-    
+
     # P-value barplot
     x = data.frame(Term=factor(terms, levels=levels(p1$data$row)), P.value=pvals)
     p2 = ggplot(x, aes(x=Term, y=P.value)) +
@@ -214,7 +214,7 @@ gsea_heatmap = function(gsea, markers=NULL, colors=NULL, max_pval=.05, max_terms
 	 coord_flip() + xlab('') + ylab('-log10(P-value)') + theme_cowplot(font_size=font_size) +
          theme(axis.line.y=element_blank(), axis.ticks.y=element_blank(), axis.text.y=element_blank(), panel.grid.major.x=element_line(colour='#000000', size=.25, linetype='dotted')) +
 	 scale_y_continuous(position='top', breaks=function(a) seq(floor(min(a)), floor(max(a))), labels=function(a) floor(a))
-    
+
     # Merge plots
     p3 = get_legend(p1)
     p1 = p1 + theme(legend.position='none')
@@ -254,35 +254,35 @@ fix_gsea_names = function(terms, nlen=45){
 
 gsealist_heatmap = function(glist, regex='', name='BP', n=3, n.plot=Inf, max_pval=1, max_padj=1, plot.max_pval=1, plot.max_padj=1, fix_names=TRUE, nlen=50, replace_na=0,
                             rcut=NULL, ret.data=F, ...){
-    
+
     # Filter by p-value and sort by NES
     glist = glist[grep(regex, names(glist))]
     glist = lapply(glist, function(a) a[[name]][order(-1*NES)])
     glist = glist[lapply(glist, nrow) > 0]
-        
+
     # Select [n] terms from each gsea
     terms = sort(unique(unlist(as.vector(sapply(glist, function(gsea) gsea[pval <= max_pval & padj <= max_padj][NES > 0][1:min(n, nrow(gsea))]$pathway)))))
-        
+
     # Get [terms x NES] matrix
     data = sapply(glist, function(gsea){
         gsea = gsea[pval <= plot.max_pval & padj <= plot.max_padj][1:min(n.plot, nrow(gsea))]
 	setkey(gsea, pathway)
 	gsea[terms, NES]
     })
-    
+
     # Get [terms x padj] matrix
     pvals = sapply(glist, function(gsea){
         gsea = gsea[pval <= plot.max_pval & padj <= plot.max_padj][1:min(n.plot, nrow(gsea))]
 	setkey(gsea, pathway)
 	gsea[terms, pval]
     })
-        
+
     # Fix rownames and NAs
     if(fix_names == TRUE){terms = fix_gsea_names(terms, nlen=nlen)}
     rownames(data) = rownames(pvals) = terms
     data[is.na(data)] = replace_na
     pvals[is.na(pvals)] = 1
-    
+
     # Remove redundant terms with rcut
     if(!is.null(rcut)){
         keep = rep(TRUE, nrow(data))
@@ -297,23 +297,23 @@ gsealist_heatmap = function(glist, regex='', name='BP', n=3, n.plot=Inf, max_pva
     	}
     	data = data[keep,]
     }
-    
+
     if(ret.data == TRUE){list(data=data, pvals=pvals)} else {
         ggheatmap(data, pvals=pvals, max_pval=.05, ...)
     }
 }
 
 
-score_signatures2 = function(seur, signatures, group_by=NULL, cells.use=NULL){
-    
+score_signatures2 = function(obj, signatures, group_by=NULL, cells.use=NULL){
+
     # Fix input arguments
-    data = seur@data
+    data = obj$data
     if(is.null(cells.use)){cells.use = colnames(data)}
     if(!is.null(group_by)){
         group_by = as.factor(group_by[cells.use])
 	totals = table(group_by)
     }
-    
+
     # Calculate signature scores
     sapply(signatures, function(genes.use){
         genes.use = intersect(genes.use, rownames(data))
@@ -325,14 +325,14 @@ score_signatures2 = function(seur, signatures, group_by=NULL, cells.use=NULL){
 	}
 	x = x[,apply(x, 2, sd) != 0]
 	rowMeans(x)
-   })						
+   })
 }
 
-diff_signatures = function(seur, cells.1, cells.2, signatures, group_by=NULL){
+diff_signatures = function(obj, cells.1, cells.2, signatures, group_by=NULL){
 
     # Fix input arguments
-    data = seur@data
-    if(is.null(group_by)){group_by = seur@ident}
+    data = obj$data
+    if(is.null(group_by)){group_by = obj$ident}
     if(is.null(names(group_by))){stop()}
     groups.1 = as.factor(group_by[as.character(cells.1)])
     groups.2 = as.factor(group_by[as.character(cells.2)])
@@ -352,18 +352,18 @@ diff_signatures = function(seur, cells.1, cells.2, signatures, group_by=NULL){
 }
 
 
-pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes.txt', require_ix=TRUE){
+pair_enrich = function(pairs, gene_sets, universe='~/code/db/hg19_genes.txt', require_ix=TRUE){
     require(data.table)
-    
+
     # Calculate enrichment scores for all gene pairs (e.g. ligand-receptor interactions) and gene sets (e.g. GO terms)
     # This function uses the minimum overlap found in each column of the gene pair
     # If require_ix, then both genes in the gene pair must be found in the gene set
-    
+
     # Read input data
     universe = readLines(universe)
     pairs = as.data.table(pairs)
     colnames(pairs) = c('a', 'b')
-    
+
     # Select gene universe
     pairs = pairs[a %in% universe & b %in% universe]
     gene_sets = sapply(gene_sets, function(a) intersect(a, universe), simplify=F)
@@ -371,9 +371,9 @@ pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes
     # Pre-calculate sizes
     nu = length(unique(universe))
     np = length(unique(unlist(pairs)))
-    
+
     # Fisher test on gene pairs
-    res = sapply(names(gene_sets), function(name){        
+    res = sapply(names(gene_sets), function(name){
         gene_set = gene_sets[[name]]
 
 	if(require_ix == TRUE){
@@ -381,7 +381,7 @@ pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes
 	} else {
 	    p = pairs
 	}
-	
+
 	# Calculate intersections
 	a = unique(intersect(p$a, gene_set))
 	b = unique(intersect(p$b, gene_set))
@@ -396,12 +396,12 @@ pair_enrich = function(pairs, gene_sets, universe='~/aviv/db/map_gene/hg19_genes
 	if(u < 2){return(NULL)}
 	data.frame(Term=name, P.value=fisher.test(matrix(c(u,v,w,x), nrow=2, ncol=2))$p.value, Ligand=paste(a, collapse=','), Receptor=paste(b, collapse=','), N=u)
     })
-    
+
     as.data.table(do.call(rbind, res))[order(P.value)]
 }
 
 
-gsea.fisher = function(gene_set1, gene_set2, universe='~/aviv/db/map_gene/hg19_genes.txt', n.cores=1){
+gsea.fisher = function(gene_set1, gene_set2, universe='~/code/db/hg19_genes.txt', n.cores=1){
 
     # GSEA with fisher test
     # gene_set1 = list of genes
@@ -411,11 +411,11 @@ gsea.fisher = function(gene_set1, gene_set2, universe='~/aviv/db/map_gene/hg19_g
     # convert gene sets to list
     if(typeof(gene_set1) != 'list'){gene_set1 = list(gene_set1)}
     if(typeof(gene_set2) != 'list'){gene_set2 = list(gene_set2)}
-    
+
     # fix names
     if(is.null(names(gene_set1))){names(gene_set1) = paste0('query_', 1:length(gene_set1))}
     if(is.null(names(gene_set2))){names(gene_set2) = paste0('target_', 1:length(gene_set2))}
-    
+
     # pairwise fisher tests
     if(length(universe) == 1){all_genes = readLines(universe)} else {all_genes = universe}
     m = run_parallel(
@@ -442,30 +442,30 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
 
     load_mast()
     options(mc.cores=n.cores)
-    
+
     # Make single cell assay object
     fdata = data.frame(matrix(rep(1, nrow(data))))
     covariates = as.data.frame(covariates)
-    sca = MAST::FromMatrix(as.matrix(data), covariates, fdata)    
-    
+    sca = MAST::FromMatrix(as.matrix(data), covariates, fdata)
+
     # Fit MAST hurdle model
     if(is.null(formula)){
         formula = paste('~' , paste(colnames(covariates), collapse=' + '))
     }
     zlm.obj = zlm(as.formula(formula), sca)
-    
+
     # Calculate bootstraps
     boot = bootVcov1(zlm.obj, gsea.boot)
-    
+
     # Get GO gene list
-    genes = read.table('~/aviv/db/gopca/go_annotations_human.tsv', sep='\t', stringsAsFactors=F, row.names=1)
+    genes = read.table('~/code/db/gopca/go_annotations_human.tsv', sep='\t', stringsAsFactors=F, row.names=1)
     sets = structure(strsplit(genes[,4], ','), names=rownames(genes))
     sets = lapply(sets, function(a){b = as.integer(na.omit(match(a, rownames(zlm.obj@coefC))))})
     sets = sets[sapply(sets, length) >= 5]
-    
+
     # Get hypothesis columns
     names = colnames(zlm.obj@coefC)[grep(paste(lrt_regex, collapse='|'), colnames(zlm.obj@coefC))]
-    
+
     # Perform GSEA
     res = lapply(names, function(a){
         gsea = summary(gseaAfterBoot(zlm.obj, boot, sets, CoefficientHypothesis(a)))
@@ -475,7 +475,7 @@ gsea.mast = function(data, covariates, formula=NULL, lrt_regex=TRUE, gsea.boot=1
 	return(gsea)
     })
     res = do.call(rbind, res)
-    
+
     options(mc.cores=1)
     return(res)
 }
@@ -488,7 +488,7 @@ go_genes = function(genes, universe, ontology='BP'){
     gene_list = as.numeric(universe %in% genes)
     names(gene_list) = universe
     gene_list = factor(gene_list)
-    
+
     # Run topGO tests
     GOdata = new('topGOdata', ontology=ontology, allGenes=gene_list, annot=annFUN.GO2genes, GO2genes=GO2genes)
     res = runTest(GOdata, algorithm='classic', statistic='fisher')
@@ -503,7 +503,7 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
     require(topGO)
     require(naturalsort)
     GO2genes = readMappings(file='~/aviv/db/gopca/go.test.txt', sep='\t')
-    
+
     # Ontology can be: BP (biological process), MF (molecular function), or CC (cellular component)
 
     # Get column names
@@ -516,11 +516,11 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
 	cluster = 'cluster'
 	m = m[m$auc > .5,]
     }
-    
+
     # Test each cluster
     all_genes = unique(m$gene)
     clusters = naturalsort(as.character(unique(m[,cluster])))
-    
+
     go_terms = run_parallel(foreach(a=clusters, .packages=c('topGO')) %dopar% {
 
         # Filter marker genes
@@ -537,7 +537,7 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
 	    print('Filtering by AUC')
 	    mi = mi[mi$auc <= auc,]
 	}
-	
+
 	# Construct gene list
 	gene_list = as.numeric(all_genes %in% mi$gene)
 	names(gene_list) = all_genes
@@ -550,7 +550,7 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
 	res = res[res$result1 <= .05,]
 	return(res)
     }, n.cores=n.cores)
-    
+
     names(go_terms) = clusters
     return(go_terms)
 }

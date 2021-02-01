@@ -1,5 +1,5 @@
 library(argparse)
-seurat()
+singlecell()
 
 if(interactive()){
 
@@ -50,12 +50,12 @@ rownames(data) = genes
 colnames(data) = cells
 
 
-# --------------------
-# create seurat object
-# --------------------
+# ------------------------
+# create singlecell object
+# ------------------------
 
-seur = make_seurat(name=args$prefix, dge=data, minc=0, ming=0)
-seur@data.info = cbind(seur@data.info, meta)
+obj = make_obj(name=args$prefix, dge=data, minc=0, ming=0)
+obj$meta.data = cbind(obj$meta.data, meta)
 
 
 # ----------------
@@ -67,16 +67,16 @@ umap = paste0(args$prefix, '.umap.csv')
 
 if(file.exists(pca)){
     pca = read.table(pca, sep=',', header=F)
-    rownames(pca) = colnames(seur@data)
+    rownames(pca) = colnames(obj$data)
     colnames(pca) = paste0('PC_', 1:ncol(pca))
-    seur@pca.rot = pca
+    obj$pca.rot = pca
 }
 
 if(file.exists(umap)){
     umap = read.table(umap, sep=',', header=F)
-    rownames(umap) = colnames(seur@data)
+    rownames(umap) = colnames(obj$data)
     colnames(umap) = paste0('tSNE_', 1:ncol(umap))
-    seur@tsne.rot = umap
+    obj$tsne.rot = umap
 }
 
 
@@ -84,4 +84,4 @@ if(file.exists(umap)){
 # save file
 # ---------
 
-saveRDS(seur, file=args$out)
+saveRDS(obj, file=args$out)

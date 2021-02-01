@@ -16,15 +16,15 @@ load_mast()
 trycatch = function(a){tryCatch(expr={a}, error=function(e){NULL})}
 
 run_zlm = function(data, h1, h0){
-    
+
     # check hypotheses
     if(!is.list(h1)){h1 = list(h1)}
     if(!is.list(h0)){h0 = list(h0)}
-    
+
     # track progress
     i = 0
     cat(paste(c('\nTesting ', length(h1), ' hypotheses\n', rep('-', 100), ' 100%', '\n'), collapse=''))
-    
+
     # run zlm for every h1 hypothesis
     r1 = sapply(h1, function(f){
         i <<- i + 1
@@ -32,47 +32,47 @@ run_zlm = function(data, h1, h0){
         trycatch(zlm(f, sca=data))
     }, simplify=F)
     cat('\n\n')
-    
+
     # run zlm for every h0 hypothesis
     r0 = sapply(h0, function(formula){
         trycatch(zlm(formula, sca=data))
     }, simplify=F)
-    
+
     # get coefficients and p-values for every h1 hypothesis
     sapply(r1, function(a){
-        
+
         coefD = trycatch(t(a$disc$coefficients))
 	coefC = trycatch(t(a$cont$coefficients))
 	pvals = do.call(cbind, sapply(r0, function(b) trycatch(zlm.pvals(a, b)), simplify=F))
-	
+
 	cnames = unique(c(colnames(coefD), colnames(coefC), colnames(pvals)))
 	res = matrix(NA, nrow=5, ncol=length(cnames))
 	rownames(res) = c('coefD', 'pvalD', 'coefC', 'pvalC', 'pvalH')
 	colnames(res) = cnames
-	
+
 	res['coefD', colnames(coefD)] = coefD
 	res['coefC', colnames(coefC)] = coefC
 	res[rownames(pvals), colnames(pvals)] = pvals
-	
+
 	res
-    }, simplify=F)    
+    }, simplify=F)
 }
 
 zlm.loglik = function(zlm_out){
-    
+
     # Initialize log-likelihoods
     L = c(C=0, D=0)
 
     # Discrete
     dev = zlm_out$disc$deviance
     L['D'] = -dev/2
-        
+
     # Continuous
     s2 = zlm_out$cont$dispersionMLE
     dev = zlm_out$cont$deviance
     N = zlm_out$cont$df.null+1
     L['C'] = -.5*N*(log(s2*2*pi)+1)
-    
+
     return(L)
 }
 
@@ -95,6 +95,6 @@ zlm.pvals = function(r1, r0){
     df = d0 - d1
     pvals = MAST:::makeChiSqTable(lambda, df, 1)[,'Pr(>Chisq)']
     names(pvals) = list(cont='pvalC', disc='pvalD', hurdle='pvalH')[names(pvals)]
-    
+
     return(pvals)
 }

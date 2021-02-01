@@ -30,15 +30,16 @@ def error(text, indent=2):
 def detect_fasta_format(fn):
     # automatically detect FASTA/FASTQ format
     i = 0
+    fmt = 'unknown'
     for line in open_gz(fn):
         i += 1
-        if i == 3:
+        if i == 1:
             if line.startswith('>'):
-                return 'fasta'
-            elif line.startswith('+'):
-                return 'fastq'
-            else:
-                return 'unknown'
+                fmt = 'fasta'
+        if i == 3:
+            if line.startswith('+'):
+                fmt = 'fastq'
+            return fmt
 
 
 def iter_fst(fn, split=False):
@@ -79,6 +80,13 @@ def iter_fsq(fn):
             record = []
         record.append(line.rstrip())
     yield record
+
+
+def iter_seq(fn):
+    if detect_fasta_format(fn) == 'fasta':
+        return iter_fst(fn)
+    else:
+        return iter_fsq(fn)
 
 
 def read_fst(fn, reverse=False, split=False):

@@ -1,7 +1,7 @@
 
 
 mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, window_size=100, do.plot=FALSE, invert=FALSE){
-    
+
     # calculate mean and cv
     u = apply(data, 1, mean)
     v = apply(data, 1, var)
@@ -9,14 +9,14 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
     u = u[i]
     v = v[i]
     cv = sqrt(v)/u
-    
+
     # fit loess curve
     l = loess(log(cv) ~ log(u), family='symmetric')
     d = log(cv) - l$fitted
-    
+
     # get variable genes
     if(use_bins == TRUE){
-    
+
         # select variable genes from equal frequency bins
         library(Hmisc)
 	k = as.integer(num_genes/num_bins)
@@ -38,11 +38,11 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
 	ru = rollapply(D, window_size, function(a) mean(unique(a)), partial=T)
 	rs = rollapply(D, window_size, function(a) sd(unique(a)), partial=T)
 	rz = structure((D - ru)/rs, names=names(D))
-	
+
 	# select variable genes
 	var_genes = names(sort(rz, decreasing=T)[1:num_genes])
     }
-    
+
     # plot results
     if(do.plot == TRUE){
 	colors = c('#cccccc', 'black')[as.integer(names(u) %in% var_genes) + 1]
@@ -55,9 +55,9 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
 
 
 get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, min_ident=25, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
-    
+
     source('~/code/single_cell/parallel.r')
-    
+
     # Fix ident
     if(is.null(ident)){ident = rep(1, ncol(counts))}
     ident = as.factor(as.character(ident))
@@ -72,7 +72,7 @@ get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tp
     }
     levels(ident)[levels(ident) %in% i] = new_name
     print(table(ident))
-    
+
     # Subset idents
     levels.use = names(sort(table(ident), dec=T))[1:min(50, length(unique(ident)))]
     print(table(ident)[levels.use])
@@ -85,20 +85,20 @@ get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tp
 	print(paste('Subsetting from', nrow(data), 'to', length(genes.use), 'genes'))
     }
     data = data[genes.use,]
-    
+
     # var_genes = sapply(levels(ident), function(i){print(i)
     var_genes = sapply(levels.use, function(i){print(i)
-    
+
             # Start plotting device
 	    if(!is.null(prefix)){png(paste(prefix, i, 'png', sep='.'), w=1000, h=800)}
-	    
+
 	    # Subsample data
 	    data = data[,ident == i]
 	    if(do.tpm){data = calc_tpm(data=data)}
-    	    genes.use = rowSums(data > 0) >= min_cells	    
+    	    genes.use = rowSums(data > 0) >= min_cells
 	    data = data[genes.use,]
 	    print(dim(data))
-	    
+
 	    if(method == 'loess'){
 	        vi = mean_cv_loess(data, num_genes=num_genes, do.plot=do.plot, ...)
 	    }
@@ -115,10 +115,10 @@ get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tp
 
 	    # Stop plotting device
 	    if(!is.null(prefix)){dev.off()}
-	    
+
 	    return(vi)
     })
-    
+
     if(do.flatten == TRUE){
         a = sort(table(as.character(unlist(var_genes))), decreasing=T)
 	num_genes = min(length(a), num_genes)
@@ -135,19 +135,19 @@ get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tp
 meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=NULL, diffCV.num_genes=NULL, do.spike=FALSE, main.use=NULL, prefix=NULL, do.plot=FALSE, ret.diffCV=FALSE){
 
     require(MASS)
-    
+
     # Empirical mean, var and CV
     mean_emp = apply(count.data, 1, mean)
     var_emp = apply(count.data, 1, var)
     cv_emp = sqrt(var_emp) / mean_emp
-    
+
     # NB sampling
     a=colSums(count.data)
     size_factor =  a/ mean(a)
     fit=fitdistr(size_factor, "Gamma")
     if (do.spike) spike.genes=grep("^ERCC", rownames(count.data), value=TRUE)
     print(fit)
-    
+
     if(do.plot==T){
     par(mfrow=c(2,2))
     if (!reads.use){
@@ -159,20 +159,20 @@ meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=N
     text(5,0.6, paste("shape = ", round(fit$estimate[1],2)))
     text(5,0.5, paste("rate = ", round(fit$estimate[2],2)))
     }
-    
+
     # Gamma distributions of individual genes are just scaled versions. If X ~ Gamma(a,b)
     # then cX ~ Gamma(a, b/c)
     a_i = rep(fit$estimate[1], length(mean_emp)); names(a_i) = names(mean_emp)
     b_i = fit$estimate[2] / mean_emp; names(b_i) = names(mean_emp)
     mean_NB = a_i / b_i; var_NB = a_i*(1+b_i) / (b_i^2)
     cv_NB = sqrt(var_NB)/mean_NB
-    
+
     diffCV = log(cv_emp) - log(cv_NB)
     if(ret.diffCV == TRUE){
         return(diffCV)
     }
     print(length(diffCV))
-    
+
     if(!is.null(diffCV.cutoff)){
 	pass.cutoff=names(diffCV)[which(diffCV > diffCV.cutoff & (mean_emp > 0.005 & mean_emp < 100))]
     } else if (!is.null(diffCV.num_genes)){
@@ -190,6 +190,6 @@ meanCVfit = function(count.data, reads.use=FALSE, do.text=FALSE, diffCV.cutoff=N
         hist(diffCV, 50, probability=TRUE, xlab="diffCV")
         par(mfrow=c(1,1))
     }
-    
+
     return(as.character(pass.cutoff))
 }

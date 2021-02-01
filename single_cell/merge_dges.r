@@ -39,7 +39,7 @@ option_list = list(make_option('--name', help='prefix added to cell names', defa
 		   make_option('--sig', help='filter by gene signature (genes)', default=NULL),
 		   make_option('--qmin', help='filter by gene signature (minimum quantile)', type='numeric', default=0),
 		   make_option('--transpose', help='transpose matrix?', default=FALSE, action='store_true')
-		   
+
                    )
 args = parse_args(OptionParser(option_list=option_list))
 
@@ -69,7 +69,7 @@ map$name[is.na(map$name)] = ''
 
 # Read DGE (sparse or text)
 read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, minr=1, rename=FALSE, fix_duplicates=TRUE, transpose=FALSE){
-    
+
     # Read sparse or text matrix
     if(file.exists(path) & !dir.exists(path)){
         counts = tryCatch({
@@ -85,27 +85,27 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, minr=1, renam
 	    list(counts=NULL, rmap=NULL)
 	})
     }
-        
+
     # Check null
     if(is.null(nrow(counts)) | is.null(ncol(counts))){return(list(counts=NULL, rmap=NULL))}
     if((nrow(counts) == 0) | (ncol(counts) == 0)){return(list(counts=NULL, rmap=NULL))}
-    
+
     # Transpose
     if(transpose == TRUE){
         counts = t(counts)
     }
-    
+
     # Filter matrix
     print(dim(counts))
     genes.use = rowSums(counts > 0) >= minc
     cells.use = (grepl(pattern, colnames(counts)) & (colSums(counts > 0) >= ming)) & (colSums(counts) >= minr)
     counts = counts[genes.use, cells.use, drop=F]
     print(dim(counts))
-    
+
     # Check null
     if(is.null(nrow(counts)) | is.null(ncol(counts))){return(list(counts=NULL, rmap=NULL))}
     if((nrow(counts) == 0) | (ncol(counts) == 0)){return(list(counts=NULL, rmap=NULL))}
-    
+
     # Fix formatting
     old_names = colnames(counts)
     rownames(counts) = gsub('^mm10_', '', rownames(counts))
@@ -113,7 +113,7 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, minr=1, renam
     colnames(counts) = gsub('\\.1$', '', colnames(counts))
     colnames(counts) = gsub('-1$', '', colnames(counts))
     colnames(counts) = gsub('^\\.', '', colnames(counts))
-    
+
     # Rename cells
     rmap = list()
     if(rename == TRUE){
@@ -126,7 +126,7 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, minr=1, renam
 	rmap[old_names] = new_names
     }
     colnames(counts) = gsub('^\\.', '', colnames(counts))
-    
+
     # Fix duplicate genes
     if(fix_duplicates == TRUE){
         print('Fixing duplicates')
@@ -139,7 +139,7 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, minr=1, renam
 	    counts = as(counts, 'sparseMatrix')
 	}
     }
-    
+
     # Filter by gene signature
     if(!is.null(args$sig)){
         sig = intersect(strsplit(args$sig, ',')[[1]], rownames(counts))
@@ -151,7 +151,7 @@ read_dge = function(path, prefix='', pattern='.*', ming=1, minc=1, minr=1, renam
 	counts = counts[,cells.use,drop=F]
 	print(dim(counts))
     }
-    
+
     # Print and return
     cat(paste0('\nRead ', path, ' [', nrow(counts), ' x ', ncol(counts), ']\n'))
     if((args$sparse == TRUE) & (!is.null(dim(counts)))){counts = as(counts, 'sparseMatrix')}
@@ -172,22 +172,22 @@ for(i in 1:nrow(map)){
     name = map[i,1]
     path = map[i,2]
     pattern = map[i,3]
-    
+
     # read and filter dge
     res = read_dge(path, prefix=name, pattern=pattern, ming=args$ming, minc=1, minr=args$minr, rename=args$rename, transpose=args$transpose) # minc=1 for small dges
     dge = res$counts
     print(paste(rownames(dge)[1:5], collapse=', '))
     print(paste(colnames(dge)[1:5], collapse=', '))
-    
+
     if(is.null(dge) | is.null(ncol(dge))){next}
     rmap[names(res$rmap)] = res$rmap[names(res$rmap)]
     if(!is.null(dim(dge))){dges = c(dges, dge)}
-    
+
     # size tracking
     all_rows = sort(unique(c(all_rows, rownames(dge))))
     all_cols = sort(unique(c(all_cols, colnames(dge))))
     all_elem = all_elem + length(dge@x)
-    
+
     print(paste('rows:', length(all_rows), 'cols:', length(all_cols), 'elem:', formatC(all_elem, format='d', big.mark=',')))
 }
 print(length(dges))
@@ -218,7 +218,7 @@ for(i in 1:length(dges)){
         m = rbind(m, n)
     }
     m = m[rows,,drop=F]
-    
+
     # combine data
     x = cbind(x, m)
 
@@ -252,7 +252,7 @@ x = x[genes.use, cells.use]
 cat(paste0('\nWriting DGE [', nrow(x), ' x ', ncol(x), ']\n'))
 
 # Write to file
-if(args$sparse == TRUE){    
+if(args$sparse == TRUE){
     write_mtx(x, prefix=args$out, data='matrix.mtx', rows='features.tsv', cols='barcodes.tsv')
 } else {
     cat('\nWriting dense matrix\n')

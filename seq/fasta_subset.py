@@ -13,6 +13,8 @@ parser.add_argument('--keep', help='IDs to keep (.txt)')
 parser.add_argument('--remove', help='IDs to remove (.txt)')
 parser.add_argument('--minlen', help='Minimum length', type=int, default=0)
 parser.add_argument('--num', help='Number to keep', type=int, default=0)
+parser.add_argument('--prefix', help='Prefix to add', type=str, default='')
+parser.add_argument('--prefix_sep', help='Prefix separator', type=str, default='.')
 parser.add_argument('--debug', help='Debug mode', action='store_true', default=False)
 args = parser.parse_args()
 
@@ -138,6 +140,7 @@ for record in iter_seq:
         record[1] = seq
         if args.fsq or args.FSQ:
             record[3] = qua
+        record[0] = record[0][0] + args.prefix + args.prefix_sep + record[0][1:]
         print('\n'.join(record))
         count['total'] += 1
     else:
