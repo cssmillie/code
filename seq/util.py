@@ -93,6 +93,7 @@ def read_fst(fn, reverse=False, split=False):
     # read fasta file as dictionary
     fst = {}
     for [sid, seq] in iter_fst(fn, split=split):
+        sid = sid[1:].split()[0]
         if reverse == False:
             fst[sid] = seq
         elif reverse == True:

@@ -5,7 +5,7 @@ require(grid)
 
 
 # Run fast PCA on a singlecell object
-run_rpca = function(obj, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robust=FALSE){
+run_rpca = function(obj, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=FALSE, robust=FALSE, scale.max=Inf){
 
     # This function calculates a PCA on the DGE in obj$scale.data
     # If data, this function will still update the singlecell object
@@ -21,7 +21,14 @@ run_rpca = function(obj, data=NULL, k, genes.use=NULL, cells.use=NULL, rescale=F
 
     # Calculate PCA
     if(robust == FALSE){
-        pca.obj = rpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)
+        print(paste('Calculating rpca on [cells x genes] matrix with center =', rescale, 'and scale =', rescale))
+	data = t(data)
+	if(rescale == TRUE){
+	    data = scale(data)
+	    data[data < -1*scale.max] = -1*scale.max
+	    data[data > scale.max] = scale.max
+	}
+	pca.obj = rpca(data, center=FALSE, scale=FALSE, retx=TRUE, k=k)
     } else {
         print(dim(data))
         #pca.obj = rrpca(t(data), center=rescale, scale=rescale, retx=TRUE, k=k)

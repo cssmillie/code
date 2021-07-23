@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--fst', help='Input FST file')
 parser.add_argument('--gtf', help='Input GTF file')
 parser.add_argument('--tag', help='GTF tag', default='gene')
+parser.add_argument('--names', help='use gene names (default = gene ids)', default=False, action='store_true')
 args = parser.parse_args()
 
 # Read FST sequence
@@ -45,10 +46,12 @@ for line in open(args.gtf):
         continue
     
     # Get gene name
-    try:
-        gene = re.search('gene "(.*?)"', anno).group(1)
-    except:
-        gene = re.search('gene_id "(.*?)"', anno).group(1)
+    gene = re.search('gene_id "(.*?)"', anno).group(1)
+    if args.names:
+        try:
+            gene = re.search('gene "(.*?)"', anno).group(1)
+        except:
+            pass
     
     # Get sequence
     seq = fst[contig][(beg-1):end]

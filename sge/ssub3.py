@@ -49,6 +49,8 @@ def parse_args():
 
 def check_files(fns):
     for fn in fns:
+        if os.path.exists('%s.ok' %(fn)):
+            continue
         if not os.path.exists(fn) or os.stat(fn).st_size == 0:
             return False
     return True
@@ -259,9 +261,12 @@ class Submitter():
         print(out)
         
         # update tasks
-        job_id = self.parse_job(out)
-        for task in tasks:
-            task.update_resources(job_id=job_id)
+        try:
+            job_id = self.parse_job(out)
+            for task in tasks:
+                task.update_resources(job_id=job_id)
+        except:
+            return False
 
         # write log
         self.write_log('Job %s: "%s" (u=%s)\n%s' %(job_id, cmd, u, '\n'.join(commands)))
@@ -420,10 +425,10 @@ class Submitter():
     
     
     def check_finished(self):
-
+        
         # get task groups
         tasks = self.group_tasks_by_status(self.tasks)
-
+        
         # case 1: finished
         if len(tasks['finished']) + len(tasks['failed']) == len(self.tasks):
             self.write_log('finished')

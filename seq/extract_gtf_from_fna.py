@@ -210,7 +210,7 @@ for pre in imap:
             intron = fna[contig][ibeg:(beg-1)]
             ibeg = end
             if ipre and not args.exon and len(intron) > 0:
-                intron_seq = re.sub('^>\.', '>', '>%s.intron_%s %s\n%s %s' %(pre, ipre, gname, intron))
+                intron_seq = re.sub('^>\.', '>', '>%s.intron_%s %s\n%s' %(pre, ipre, gname, intron))
                 writeout(intron_seq, org=pre, gene=gname)
             ipre = gid
             if ifin == '':

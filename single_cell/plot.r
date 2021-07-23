@@ -69,9 +69,9 @@ subsample_points = function(coords, k, nbins=25, bin_type='size'){
 }
 
 
-load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL){
-    if(!file.exists(file)){file = paste0('~/code/markers/', file, '.txt')}
-    sig = read.table(file, stringsAsFactors=F, row.names=1)
+load_signature = function(file=NULL, file.regex=NULL, file.cols=NULL, sep=''){
+    if(!file.exists(file)){file = paste0('~/aviv/db/markers/', file, '.txt')}
+    sig = read.table(file, stringsAsFactors=F, row.names=1, sep=sep, quote='')
     sig = structure(strsplit(sig[,1], ','), names=rownames(sig))
     if(!is.null(file.regex)){file.cols = grep(file.regex, names(sig), value=T)}
     if(!is.null(file.cols)){sig = sig[file.cols]}
@@ -1447,9 +1447,10 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
     if(is.null(col)){col = rep('', length(x))}
     if(is.null(sig)){sig = rep(NA, length(x))}
     if(is.null(size)){size = rep(1, length(x))}
-
+    if(is.character(col)){col = as.factor(col)}
+    
     if(!is.null(edges)){colnames(edges) = c('x', 'y', 'xend', 'yend')}
-
+    
     # adjust range
     xmin = max(na.omit(sort(x))[[xmin.n]], xmin)
     xmax = min(na.omit(sort(x, decreasing=T))[[xmax.n]], xmax)
@@ -1459,9 +1460,12 @@ simple_scatter = function(x, y, lab=NA, sig=FALSE, col=NULL, col.title='', size=
     x[x > xmax] = xmax
     y[y < ymin] = ymin
     y[y > ymax] = ymax
-    col = pmax(cmin, col)
-    col = pmin(cmax, col)
 
+    if(!is.factor(col)){
+        col = pmax(cmin, col)
+        col = pmin(cmax, col)
+    }
+    
     d = data.frame(x=x, y=y, lab=lab, col=col, size=size, flag='', sig=sig, stringsAsFactors=FALSE)
     i.lab = !is.na(d$lab)
     di = d[i.lab,]

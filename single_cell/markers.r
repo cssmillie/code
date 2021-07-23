@@ -125,22 +125,33 @@ select_genes = function(obj, stats, data.use=NULL, genes.use=NULL, min_cells=3, 
     # Select genes by genes.use
     if(is.null(data.use)){data.use = obj$data}
     if(is.null(genes.use)){genes.use = rownames(data.use)}
-
-    # Select genes by min_cells
-    g1 = as.character(stats[, (max(n) >= min_cells) | (max(ref_n) >= min_cells), .(gene)][V1 == TRUE, gene])
-
-    # Select genes by min_alpha
-    g2 = as.character(stats[, (max(alpha) >= min_alpha) | (max(ref_alpha) >= min_alpha), .(gene)][V1 == TRUE, gene])
-
-    # Select genes by min_fc
-    if(dir == 'pos'){
-        g3 = as.character(stats[, max(log2fc) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
+    
+    # Check stats
+    if(is.null(stats)){
+        
+	g1 = names(which(rowSums(obj$counts > 0) >= min_cells))
+	g2 = names(which(rowMeans(obj$counts > 0) >= min_alpha))
+	genes.use = intersect(g1, g2)
+	
     } else {
-        g3 = as.character(stats[, max(abs(log2fc)) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
+        
+    	# Select genes by min_cells
+    	g1 = as.character(stats[, (max(n) >= min_cells) | (max(ref_n) >= min_cells), .(gene)][V1 == TRUE, gene])
+	
+    	# Select genes by min_alpha
+    	g2 = as.character(stats[, (max(alpha) >= min_alpha) | (max(ref_alpha) >= min_alpha), .(gene)][V1 == TRUE, gene])
+	
+    	# Select genes by min_fc
+    	if(dir == 'pos'){
+            g3 = as.character(stats[, max(log2fc) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
+    	} else {
+            g3 = as.character(stats[, max(abs(log2fc)) >= log2(min_fc), .(gene)][V1 == TRUE, gene])
+        }
+	
+        # Intersect and return genes.use
+    	genes.use = Reduce(intersect, list(genes.use, g1, g2, g3))
     }
-
-    # Intersect and return genes.use
-    genes.use = Reduce(intersect, list(genes.use, g1, g2, g3))
+    
     return(genes.use)
 }
 
@@ -159,19 +170,27 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
         tpm = tpm[,cells.use]
 	covariates = covariates[cells.use,,drop=F]
     }
-
+    
     # Drop levels
     covariates = relevel_factors(covariates)
 
+    # Check for factors
+    u = grepl(lrt_regex, colnames(covariates))
+    v = apply(covariates, 2, is.factor)
+    if(sum(u & v) == 0){
+        print('Skipping expression statistics')
+        return(NULL)
+    }
+       
     # Select genes
     if(!is.null(genes.use)){tpm = tpm[genes.use,,drop=F]}
     total = rowSums(tpm)
-
+    
     # Model matrix
     print('Model matrix')
     mm_formula = gsub('\\+ *\\S*\\|\\S+', '', as.character(formula), perl=T)
     mm = as.matrix(model.matrix(as.formula(mm_formula), data=unorder_factors(covariates)))
-
+    
     # Invert matrix
     print('Invert matrix')
     u = mm_logical_not(mm, formula, covariates, method=invert_method, invert=invert_logic)
@@ -181,7 +200,7 @@ expression_stats = function(tpm, covariates, formula, lrt_regex, genes.use=NULL,
     # For every column that matches lrt_regex
     print('Expression stats')
     stats = lapply(grep(lrt_regex, colnames(mm), value=T), function(a){print(a)
-
+        
 	# cell indices
 	i = as.logical(mm[,a])
 	j = as.logical(MM[,a])
@@ -246,6 +265,14 @@ fdr_stats = function(data, covariates, formula, lrt_regex, genes.use=NULL, cells
     data = data[genes.use, cells.use]
     covariates = covariates[cells.use,,drop=F]
 
+    # Check for factors
+    u = grepl(lrt_regex, colnames(covariates))
+    v = apply(covariates, 2, is.factor)
+    if(sum(u & v) == 0){
+        print('Skipping FDR statistics')
+        return(NULL)
+    }
+        
     # Model matrix
     mm = as.matrix(model.matrix(as.formula(formula), data=unorder_factors(covariates)))
 
@@ -314,7 +341,7 @@ p.find_markers = function(obj, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.u
     # Check covariates
     q = sapply(covariates, typeof)
     if('character' %in% q){print(q); stop('error: invalid covariates type')}
-
+    
     # Select cells
     cells.use = select_cells(obj, covariates, cells.use=cells.use, max_cells=max_cells, batch.use=batch.use)
 
@@ -324,6 +351,7 @@ p.find_markers = function(obj, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.u
     # Data for DE test [genes x cells]
     data = get_data(obj, data.use=data.use, tpm=tpm, cells.use=cells.use, qnorm=qnorm)
 
+    print('Expression stats')
     stats = expression_stats(tpm, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
 
     if(filter_genes == TRUE){
@@ -336,10 +364,12 @@ p.find_markers = function(obj, ident.1=NULL, ident.2=NULL, ident.use=NULL, tpm.u
         if(length(genes.use) == 0){return(c())}
 
     } else {#stats = NULL;
-        if(is.null(genes.use)){genes.use = rownames(data)}}
+        if(is.null(genes.use)){genes.use = rownames(data)}
+    }
 
     # FDR stats
     if(do.stats == TRUE){
+        print('FDR stats')
         fdr = fdr_stats(data, covariates, formula, lrt_regex, genes.use=genes.use, cells.use=cells.use, invert_method=invert_method, invert_logic=invert_logic)
 	setkey(stats, gene, contrast, ref)
 	setkey(fdr, gene, contrast, ref)

@@ -3,6 +3,9 @@ require(methods)
 require(data.table)
 require(tibble)
 require(naturalsort)
+require(wordspace)
+
+options(max.print=1000)
 
 source('~/code/single_cell/batch.r')
 source('~/code/single_cell/cluster.r')
@@ -112,7 +115,35 @@ init_obj = function(){
     return(obj)
 }
 
-make_obj = function(counts=NULL, regex='', regexv='', minc=10, maxc=NULL,maxc_per_group=NULL, ming=500, maxg=1e6, genes.use=NULL, cells.use=NULL, ident_fxn=NULL, verbose=FALSE, x11=FALSE, qnorm=F){
+seur2obj = function(seur){
+
+    obj = init_obj()
+    
+    if('raw.data' %in% slotNames(seur)){
+        obj$counts = seur@raw.data; seur@raw.data = data.frame()
+        obj$data = seur@data; seur@data = data.frame()
+    	obj$meta.data = seur@data.info; seur@data.info = data.frame()
+    	obj$ident = seur@ident; seur@ident = NA
+    	obj$tsne.rot = seur@tsne.rot; seur@tsne.rot = data.frame()
+    	obj$pca.obj = seur@pca.obj; seur@pca.obj = list()
+    	obj$pca.rot = seur@pca.rot; seur@pca.rot = data.frame()
+    }
+    
+    if('assays' %in% slotNames(seur)){
+        obj$counts = seur@assays$RNA@counts
+    	obj$data = seur@assays$RNA@data
+    	obj$meta.data = seur@meta.data
+    	obj$ident = seur@active.ident
+    	obj$tsne.rot = as.data.frame(seur@reductions$umap@cell.embeddings); colnames(obj$tsne.rot) = c('tSNE_1', 'tSNE_2')
+    	obj$pca.obj = seur@reductions$pca
+    	obj$pca.rot = seur@reductions$pca@cell.embeddings
+    }
+
+    seur = data.frame()
+    return(obj)
+}
+
+make_obj = function(counts=NULL, regex='', regexv='', minc=10, maxc=NULL,maxc_per_group=NULL, ming=500, maxg=1e6, genes.use=NULL, cells.use=NULL, ident_fxn=NULL, verbose=FALSE, x11=FALSE, bayes.n=0, qnorm=F){
 
     # Load packages
     require(data.table)
@@ -156,17 +187,18 @@ make_obj = function(counts=NULL, regex='', regexv='', minc=10, maxc=NULL,maxc_pe
     counts = counts[genes.use,,drop=F]
 
     msg( sprintf('counts = %d x %d', nrow(counts), ncol(counts)), verbose)
-
+    
     # Convert counts to sparse matrix
     if(is.data.frame(counts)){counts = as.matrix(counts)}
     counts = as(counts, 'sparseMatrix')
-
+    
     # Get cell identities
     if(is.null(ident_fxn)){
-        ident = sapply(strsplit(colnames(counts), '\\.'), '[', 1)
+        ident = sapply(strsplit(colnames(counts), '\\.'), '[[', 1)
     } else {
         ident = sapply(colnames(counts), ident_fxn)
     }
+    ident = setNames(ident, colnames(counts))
 
     # Downsample cells
     if(!is.null(maxc) | !is.null(maxc_per_group)){
@@ -184,11 +216,21 @@ make_obj = function(counts=NULL, regex='', regexv='', minc=10, maxc=NULL,maxc_pe
     counts = counts[i,]
     msg( sprintf('counts = %d x %d', nrow(counts), ncol(counts)), verbose)
 
+    # Add Bayesian prior
+    if(bayes.n > 0){
+        print('Bayesian prior')
+        p = scaleMargins(counts, cols=1/colSums(counts))
+	p = rowMeans(p)
+	p = rmultinom(n=ncol(counts), size=bayes.n, prob=p)
+	print(paste('Adding', mean(colSums(p)), 'reads to every cell'))
+	counts = counts + p
+    }
+    
     # Make singlecell object
     msg( 'Making singlecell object', verbose)
     obj = init_obj()
     obj$counts = counts
-    obj$ident = sapply(strsplit(colnames(counts), '\\.'), '[[', 1)
+    obj$ident = ident[colnames(counts)]
     obj$meta.data = data.frame(nGene=colSums(counts > 0), nUMI=colSums(counts))
     rownames(obj$meta.data) = colnames(counts)
     
@@ -200,7 +242,7 @@ make_obj = function(counts=NULL, regex='', regexv='', minc=10, maxc=NULL,maxc_pe
     } else {
         obj = quantile_normalize(obj=obj)
     }
-
+    
     # Get cell identities
     msg( 'Setting cell identities', verbose)
     if(!is.null(ident_fxn)){
@@ -238,8 +280,8 @@ quantile_normalize = function(obj=NULL, data=NULL, zero_cut=1e-4){
 
 
 run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.use=NULL, genes.use=NULL, minc=5, maxc=1e6, ming=200, maxg=1e6, ident_fxn=NULL, varmet='loess', var_regexv=NULL,
-             var_remove=NULL, min_cv2=.25, var_genes=NULL, qnorm=F, num_genes=1500, do.batch='none', batch.use=NULL,
-	     design=NULL, pc.data=NULL, num_pcs=0, pcs.use=NULL, pcs.rmv=NULL, robust_pca=F,
+             var_remove=NULL, min_cv2=.25, var_genes=NULL, use_var=FALSE, bayes.n=0, qnorm=F, num_genes=1500, regress=NULL, do.batch='none', batch.use=NULL, store.batch=FALSE, bc.data=NULL,
+	     design=NULL, pc.data=NULL, num_pcs=0, pcs.use=NULL, pcs.rmv=NULL, robust_pca=F, scale.max=10, 
 	     perplexity=25, max_iter=1000, dist.use='euclidean', do.largevis=FALSE, do.umap=FALSE, largevis.k=50, do.fitsne=FALSE, fitsne.K=-1,
 	     cluster='infomap', k=c(), verbose=T, write_out=T, do.backup=F, ncores=1, stop_cells=50, marker.test=''){
 
@@ -249,10 +291,10 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
 
     # Make singlecell object
     if(is.null(obj)){
-        obj = make_obj(counts=counts, regex=regex, regexv=regexv, minc=minc, maxc=maxc, ming=ming, maxg=maxg, genes.use=genes.use, cells.use=cells.use, ident_fxn=ident_fxn, verbose=verbose, qnorm=qnorm)
+        obj = make_obj(counts=counts, regex=regex, regexv=regexv, minc=minc, maxc=maxc, ming=ming, maxg=maxg, genes.use=genes.use, cells.use=cells.use, ident_fxn=ident_fxn, verbose=verbose, qnorm=qnorm, bayes.n=bayes.n)
     }
     if(ncol(obj$data) <= stop_cells){return(obj)}
-
+    
     msg( 'Selecting variable genes', verbose)
     ident = obj$ident
     if(is.null(var_genes)){
@@ -262,14 +304,23 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
 	print(paste('var_regexv:', length(gi), 'genes'))
 	if(!is.null(var_remove)){gi = setdiff(gi, var_remove)}
 	print(paste('var_remove:', length(gi), 'genes'))
-	var_genes = get_var_genes(obj$counts, ident=ident, method=varmet, genes.use=genes.use, num_genes=num_genes, min_ident=25)
+	var_genes = get_var_genes(obj$counts, ident=ident, method=varmet, genes.use=genes.use, num_genes=num_genes, min_ident=25, use_var=use_var)
     }
     #if(is.null(var_genes)){var_genes = get_var_genes(obj$counts, ident=ident, method=varmet, num_genes=num_genes, min_ident=25)}
     #if(!is.null(var_regexv)){var_genes = grep(var_regexv, var_genes, invert=T, value=T)}
     msg( sprintf('Found %d variable genes', length(var_genes)), verbose)
     obj$var.genes = intersect(var_genes, rownames(obj$data))
     print(var_genes)
-
+    
+    # Regression
+    if(!is.null(regress)){
+        print('Regressing out gene signature from pc.data')
+	print(obj$data[1:5,1:5])
+        x = score_cells(obj, names=regress)
+	obj$data = t(apply(obj$data, 1, function(a) .lm.fit(as.matrix(x), as.matrix(a))$residuals[,1]))
+	print(obj$data[1:5,1:5])
+    }
+    
     # Batch correction with variable genes
     if(do.batch != 'none'){
 	msg( 'Batch correction', verbose)
@@ -281,12 +332,20 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
 	if(!is.null(design)){
 	    design = design[names(obj$ident),,drop=F]
 	}
-	bc.data = batch_correct(obj, batch.use, design=design, method=do.batch, genes.use=obj$var.genes, ndim=num_pcs)
-
+	if(is.null(bc.data)){
+	    bc.data = batch_correct(obj, batch.use, design=design, method=do.batch, genes.use=obj$var.genes, ndim=num_pcs)
+	}
+	
+	# store batch corrected data
+	if(store.batch == TRUE){
+	    obj$bc.data = bc.data
+	}
+	
 	# write batch corrected data to file
 	if(write_out == TRUE){fwrite(as.data.table(bc.data), file=paste0(name, '.bc.data.txt'), sep='\t')}
-
+	
 	pc.data = t(scale(t(bc.data), center=F))
+	#pc.data = bc.data
     }
     if(is.null(pc.data)){pc.data = obj$data}
 
@@ -297,13 +356,13 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
     if(is.na(num_pcs)){num_pcs = 5}
     obj$meta.data$num_pcs = num_pcs
     msg( sprintf('Found %d significant PCs', num_pcs), verbose)
-
+    
     # Fast PCA on data
     if(do.batch %in% c('liger', 'multicca')){
         obj$pca.rot = as.data.frame(pc.data) # liger and multi-cca output saved in pc.data
 	print(dim(obj$pca.rot))
     } else {
-        obj = run_rpca(obj, data=pc.data, k=50, genes.use=obj$var.genes, robust=robust_pca, rescale=T)
+        obj = run_rpca(obj, data=pc.data, k=50, genes.use=obj$var.genes, robust=robust_pca, rescale=T, scale.max=scale.max)
 	if(write_out == TRUE){saveRDS(obj$pca.obj, file=paste0(name, '.pca.rds'))}
         msg( 'PC loadings', verbose)
         loaded_genes = get.loaded.genes(obj$pca.obj[[1]], components=1:num_pcs, n_genes=20)
@@ -333,6 +392,8 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
         msg( 'umap', verbose)
 	library(umap)
 	q = umap(obj$pca.rot[,pcs.use], method='umap-learn')$layout
+	print(dim(q))
+	#q = umap(t(as.matrix(pc.data)), method='umap-learn')$layout
     } else {
         msg( 'TSNE', verbose)
 	require(Rtsne)
@@ -360,7 +421,7 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
 	msg( 'Clustering cells', verbose)
 	k = k[k < ncol(obj$data)]
 	u = paste('Cluster.Infomap.', k, sep='')
-	v = run_cluster(obj$pca.rot[,pcs.use], k, method=cluster, weighted=FALSE, n.cores=min(length(k), ncores), dist='cosine', do.fast=T, knn=knn)
+	v = run_graph_cluster(data=obj$pca.rot[,pcs.use], k=k)
 	obj$meta.data[,u] = v
 
 	if(marker.test != ''){
@@ -380,7 +441,7 @@ run_seurat = function(name, obj=NULL, counts=NULL, regex='', regexv='', cells.us
 
 	# Plot TSNE
 	png(paste0(name, '.tsne.png'), width=800, height=650)
-	tsne.plot(obj, pt.size=1)
+	plot_tsne(obj, pt.size=1)
 	dev.off()
 
 	# Plot clusters

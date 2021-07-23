@@ -1,5 +1,5 @@
 import numpy as np
-import argparse, pickle, glob, os, re, sys
+import argparse, pickle, glob, os, re, sys, time
 
 # Merge kpileups from multiple samples. Write dictionary of (M, N, 4) numpy arrays where:
 # M = samples
@@ -9,10 +9,11 @@ import argparse, pickle, glob, os, re, sys
 
 # Read input arguments
 parser = argparse.ArgumentParser()
+parser.add_argument('--kp_dir', help='Directory for kpileup files', default='.')
 parser.add_argument('--samples', help='Sample list (newline-delimited)')
 parser.add_argument('--gene', help='Gene name')
 parser.add_argument('--gene_file', help='kpileup gene file')
-parser.add_argument('--out', help='Output file (.cPickle)')
+parser.add_argument('--out', help='Output file (.pickle)')
 args = parser.parse_args()
 
 if os.path.exists(args.out):
@@ -34,39 +35,62 @@ M = len(sample2index)
 gene2beg = {}
 x = {}
 for line in open(args.gene_file):
-    line = line.rstrip().split()
+    line = line.rstrip().split('\t')
     contig = line[0]
     gene = line[1]
     beg = int(line[2])
     end = int(line[3])
-    gene2beg[gene] = beg
-    if gene != args.gene:
-        continue
-    else:
+    if gene == args.gene:
+        gene2beg[gene] = beg
         x = np.zeros([M, (end - beg + 1), 4])
 
 # Add kpileup results to numpy arrays
 for sample in sample2index:
-    print(sample, sample2index[sample])
-    for line in open('%s.kp.txt' %(sample)):
-        line = line.rstrip().split()
-        if len(line) == 10 and line[0] != 'Sample':
+    
+    # read kpileup index
+    [beg, end] = [-np.inf, np.inf]
+    ifn = '%s/%s.kp.index' %(args.kp_dir, sample)
+    if os.path.exists(ifn):
+        for line in open(ifn):
+            line = line.rstrip().split('\t')
+            if line[0] == args.gene:
+                beg = int(line[1])
+                end = int(line[2])
+                print(sample, beg, end)
+                break
+        else:
+            print('skipping %s' %(sample))
+            continue
+    
+    with open('%s/%s.kp.out' %(args.kp_dir, sample)) as fh:
+        for i, line in enumerate(fh):
             
-            sample = line[0]
-            contig = line[1]
-            pos = int(line[2])
-            gene = line[3]
-            nt = line[7]
-            count = int(line[8])            
-            
-            if gene != args.gene:
+            if i <= 1:
                 continue
             
-            i = sample2index[sample]
-            j = pos - gene2beg[gene]
-            k = nts.index(nt)
-            
-            x[i,j,k] = count
+            if beg <= i and i <= end:
+                
+                line = line.rstrip().split()
+                sample = line[0]
+                contig = line[1]
+                pos = int(line[2])
+                gene = line[3]
+                nt = line[7]
+                count = int(line[8])
+
+                if args.gene != gene:
+                    continue
+                
+                i = sample2index[sample]
+                j = pos - gene2beg[gene]
+                k = nts.index(nt)
+                
+                x[i,j,k] = count
+                
+            elif i >= end:
+                break
+            else:
+                continue
 
 # Filter alignment
 I = np.arange(x.shape[0])
@@ -97,6 +121,8 @@ if x.shape[1] > 0:
     J = J[j]
     
 print(x.shape)
+
+print(J)
 
 # Write numpy arrays to file
 res = {'x':x, 'i':I, 'j':J}

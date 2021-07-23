@@ -1,6 +1,6 @@
 
 
-mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, window_size=100, do.plot=FALSE, invert=FALSE){
+mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, window_size=100, do.plot=FALSE, invert=FALSE, use_var=FALSE){
 
     # calculate mean and cv
     u = apply(data, 1, mean)
@@ -8,7 +8,11 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
     i = u > 0 & v > 0
     u = u[i]
     v = v[i]
-    cv = sqrt(v)/u
+    if(use_var == TRUE){
+        cv = v
+    } else {
+        cv = sqrt(v)/u
+    }
 
     # fit loess curve
     l = loess(log(cv) ~ log(u), family='symmetric')
@@ -54,10 +58,10 @@ mean_cv_loess = function(data, num_genes=1500, use_bins=TRUE, num_bins=20, windo
 }
 
 
-get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tpm=F, num_genes=1500, min_cells=5, min_ident=25, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
+get_var_genes = function(data, ident=NULL, use_var=FALSE, genes.use=NULL, method='loess', num_genes=1500, min_cells=5, min_ident=25, do.plot=F, prefix=NULL, do.flatten=T, n.cores=1, ...){
 
     source('~/code/single_cell/parallel.r')
-
+    
     # Fix ident
     if(is.null(ident)){ident = rep(1, ncol(counts))}
     ident = as.factor(as.character(ident))
@@ -71,8 +75,9 @@ get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tp
         new_name = names(which.min(u[u >= min_ident]))
     }
     levels(ident)[levels(ident) %in% i] = new_name
+    print('Calculating var genes across')
     print(table(ident))
-
+    
     # Subset idents
     levels.use = names(sort(table(ident), dec=T))[1:min(50, length(unique(ident)))]
     print(table(ident)[levels.use])
@@ -94,13 +99,12 @@ get_var_genes = function(data, ident=NULL, genes.use=NULL, method='loess', do.tp
 
 	    # Subsample data
 	    data = data[,ident == i]
-	    if(do.tpm){data = calc_tpm(data=data)}
     	    genes.use = rowSums(data > 0) >= min_cells
 	    data = data[genes.use,]
 	    print(dim(data))
 
 	    if(method == 'loess'){
-	        vi = mean_cv_loess(data, num_genes=num_genes, do.plot=do.plot, ...)
+	        vi = mean_cv_loess(data, use_var=use_var, num_genes=num_genes, do.plot=do.plot, ...)
 	    }
 	    if(method == 'adam'){
 	        source('~/dev/adam/rna_seq/r/samples.r')

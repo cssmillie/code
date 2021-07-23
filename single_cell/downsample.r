@@ -84,8 +84,8 @@ knn_downsample = function(counts, pca.rot=NULL, ident=NULL, ngene=NULL, cells.us
 
     # calculate pca
     if(is.null(pca.rot)){
-        var_genes = select_var_genes(data=counts, ident=ident, method='loess', num_genes=1500)
-        data = log2(calc_tpm(data=counts) + 1)
+        var_genes = get_var_genes(data=counts, ident=ident, method='loess', num_genes=1500)
+        data = log2(calc_tpm(counts=counts) + 1)
         pca.rot = as.data.frame(rpca(t(data[var_genes,]), k=num_pcs, retx=TRUE)$x)
     }
     pca.rot = pca.rot[cells.use, 1:num_pcs]

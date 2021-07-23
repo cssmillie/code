@@ -7,7 +7,7 @@ np.set_printoptions(suppress=True)
 
 bps = {'A':[1,0,0,0], 'C':[0,1,0,0], 'G':[0,0,1,0], 'T':[0,0,0,1]}
 nts = np.array([[1,0,0,0], [0,1,0,0], [0,0,1,0], [0,0,0,1]])
-msg = False
+msg = True
 t0 = time.time()
 stdout = sys.stdout
 
@@ -93,7 +93,7 @@ def parse_args():
     group1.add_argument('--sim', help='Simulate data?', action='store_true', default=False)
     group1.add_argument('--aln', help='Input alignment (numpy)', default=None)
     group1.add_argument('--data', help='Input data object', default=None)
-    group1.add_argument('--msg', help='Print messages?', action='store_true', default=False)
+    group1.add_argument('--msg', help='Print messages?', action='store_true', default=True)
     
     # Simulation options
     group2 = parser.add_argument_group('Simulation')
@@ -151,7 +151,7 @@ def parse_args():
         args = parser.parse_args('')
         
     global msg
-    msg = args.msg
+    msg = True
     
     return args
 

@@ -31,14 +31,14 @@ if args.q:
 # Open files
 suffix = fn.split('.')[-1]
 fns = ['%s.%d.%s' %(args.o, i, suffix) for i in range(args.k)]
-for fn in fns:
-    if os.path.exists(fn):
-        exit('file %s exists' %(fn))
-fhs = cycle([open(fn, 'w') for fn in fns])
+for f in fns:
+    if os.path.exists(f):
+        exit('file %s exists' %(f))
+fhs = cycle([open(f, 'w') for f in fns])
 
 
 # Write files
 for record in iter_seq(fn):
-    fh = fhs.next()
+    fh = next(fhs)
     fh.write('\n'.join(record) + '\n')
 

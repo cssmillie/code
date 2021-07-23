@@ -5,7 +5,7 @@ load_scran = function(){
     library(scran)
 }
 
-batch_correct = function(obj, batch, design=NULL, method='combat', genes.use='var', liger.data=NULL, ndim=30){
+batch_correct = function(obj, batch, design=NULL, method='combat', genes.use='var', liger.data=NULL, ndim=10){
 
     # note: design matrix does not include batch
     if(!is.null(design)){
@@ -112,7 +112,7 @@ batch_correct = function(obj, batch, design=NULL, method='combat', genes.use='va
     }
 
     if(method == 'liger'){
-        library(liger)
+        library(rliger)
 
 	# Split data into batches
 	sparse_split = function(x, g){
@@ -144,6 +144,8 @@ batch_correct = function(obj, batch, design=NULL, method='combat', genes.use='va
 	    new.data[[i]][,1] = new.data[[i]][,1] + runif(nrow(new.data[[i]]), min=0, max=.01)
 	}
 
+	print('ndim')
+	print(ndim)
 	new.data = createLiger(new.data)
 	new.data = normalize(new.data)
 	new.data@var.genes = obj$var.genes
