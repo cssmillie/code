@@ -556,7 +556,7 @@ go_markers = function(m, top=NULL, pval=NULL, auc=NULL, ontology='BP', n.cores=1
 }
 
 load_kegg = function(names.use=NULL, names.rmv=NULL, do.flatten=FALSE, no_spaces=FALSE, regex=NULL){
-    kegg = readRDS('/ahg/regevdata/projects/Gut_Human/analysis_0417/home/db/kegg/3.kegg.human.rds')
+    kegg = readRDS('/broad/smillie-data/db/kegg/3.kegg.human.rds')
 
     kegg = sapply(names(kegg), function(A)
                sapply(names(kegg[[A]]), function(B)

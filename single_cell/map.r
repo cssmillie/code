@@ -119,7 +119,7 @@ load_anno = function(type='gut', fn=NULL, key='ident', value='name', fix=c('desc
 
     # Get filename
     if(is.null(fn)){
-	if(type == 'gut'){fn = '~/Gut_Human/current/anno/all.anno.txt'} else {fn = '~/ens/analysis/1.atlas/current/anno/neur.anno.txt'}
+	if(type == 'gut'){fn = '/broad/smillie-data/data/scrna/Colon-UC-Regev/anno/all.anno.txt'} else {fn = '~/ens/analysis/1.atlas/current/anno/neur.anno.txt'}
     }
 
     # Load annotation map
